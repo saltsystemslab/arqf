@@ -1,0 +1,7 @@
+tags
+
+# Build Directories
+build/*
+*/build/*
+
+paper_results/*

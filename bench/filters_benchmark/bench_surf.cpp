@@ -17,7 +17,7 @@
  */
 
 #include "../bench_template.hpp"
-#include "../include/SuRF/include/surf.hpp"
+#include "../filters/SuRF/include/surf.hpp"
 /**
  * This file contains the benchmark for the SuRF filter.
  */

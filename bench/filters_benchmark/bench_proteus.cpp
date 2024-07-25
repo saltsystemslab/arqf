@@ -17,9 +17,9 @@
  */
 
 #include "../bench_template.hpp"
-#include "../include/Proteus/include/proteus.hpp"
-#include "../include/Proteus/include/util.hpp"
-#include "../include/Proteus/include/modeling.hpp"
+#include "../filters/Proteus/include/proteus.hpp"
+#include "../filters/Proteus/include/util.hpp"
+#include "../filters/Proteus/include/modeling.hpp"
 
 /**
  * This file contains the benchmark for the Proteus filter.

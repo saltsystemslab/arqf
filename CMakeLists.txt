@@ -10,18 +10,6 @@ option(USE_BOOST "Use the Boost library" ON)
 option(USE_MULTI_THREADED "Use multi-threaded version of the library" OFF)
 option(PRINT_DEBUG_LOG "Print debug log messages" OFF)
 
-
-set(CMAKE_CXX_STANDARD 17)
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
-else()
-    set(USE_MULTI_THREADED OFF)
-endif ()
-
-add_library(mementolib STATIC ./src/memento.c ./src/hashutil.c)
-target_include_directories(mementolib PUBLIC ./include)
-target_compile_options(mementolib PUBLIC -Ofast -msse4.2 -D__SSE4_2_)
-
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND PRINT_DEBUG_LOG)
   target_compile_options(mementolib PUBLIC -DDEBUG)
 endif()
@@ -30,4 +18,3 @@ if (BUILD_BENCHMARKS)
     message(STATUS "Building benchmarks")
     add_subdirectory(bench)
 endif ()
-

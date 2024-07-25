@@ -19,7 +19,7 @@
 #include <utility>
 
 #include "../bench_template.hpp"
-#include "../include/Rosetta/dst.h"
+#include "../filters/Rosetta/dst.h"
 /**
  * This file contains the benchmark for the Rosetta filter.
  */

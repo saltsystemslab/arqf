@@ -22,9 +22,9 @@
 #include <bits/stdc++.h>
 #include <immintrin.h>
 
-#include "../include/REncoder/src/BOBHash32.h"
-#include "../include/REncoder/src/RBF.h"
-#include "../include/REncoder/src/REncoder.h"
+#include "../filters/REncoder/src/BOBHash32.h"
+#include "../filters/REncoder/src/RBF.h"
+#include "../filters/REncoder/src/REncoder.h"
 
 /**
  * This file contains the benchmark for the REncoder filter.

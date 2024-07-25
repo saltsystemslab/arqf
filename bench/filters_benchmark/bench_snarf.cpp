@@ -17,7 +17,7 @@
  */
 
 #include "../bench_template.hpp"
-#include "../include/SNARF/include/snarf.cpp"
+#include "../filters/SNARF/include/snarf.cpp"
 /**
  * This file contains the benchmark for the SNARF filter.
  */
