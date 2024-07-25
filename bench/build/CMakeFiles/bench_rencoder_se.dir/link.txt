@@ -1,0 +1,1 @@
+/usr/bin/c++  -march=native -O3 -DNDEBUG CMakeFiles/bench_rencoder_se.dir/filters_benchmark/bench_rencoder.cpp.o -o bench_rencoder_se 

@@ -1,0 +1,1 @@
+/usr/bin/c++  -march=native -O3 -DNDEBUG CMakeFiles/bench_memento.dir/filters_benchmark/bench_memento.cpp.o -o bench_memento  libmementolib.a 

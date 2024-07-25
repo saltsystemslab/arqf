@@ -1,0 +1,15 @@
+[submodule "bench/filters/Proteus"]
+	path = bench/filters/Proteus
+	url = https://github.com/Eric-R-Knorr/Proteus
+[submodule "bench/filters/SuRF"]
+	path = bench/filters/SuRF
+	url = https://github.com/efficient/SuRF
+[submodule "bench/filters/SNARF"]
+	path = bench/filters/SNARF
+	url = https://github.com/kapilvaidya24/SNARF
+[submodule "bench/filters/REncoder"]
+	path = bench/filters/REncoder
+	url = https://github.com/Range-Filter/REncoder
+[submodule "bench/filters/grafite"]
+	path = bench/filters/grafite
+	url = https://github.com/marcocosta97/grafite.git

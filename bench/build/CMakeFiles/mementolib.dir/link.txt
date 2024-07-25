@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmementolib.a CMakeFiles/mementolib.dir/filters/Memento/src/memento.c.o CMakeFiles/mementolib.dir/filters/Memento/src/hashutil.c.o
+/usr/bin/ranlib libmementolib.a

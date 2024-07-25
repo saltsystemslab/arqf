@@ -1,0 +1,1 @@
+/usr/bin/c++  -march=native -O3 -DNDEBUG CMakeFiles/bench_proteus.dir/filters_benchmark/bench_proteus.cpp.o -o bench_proteus  libproteus.a 
