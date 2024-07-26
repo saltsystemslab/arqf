@@ -13,3 +13,6 @@
 [submodule "bench/filters/grafite"]
 	path = bench/filters/grafite
 	url = https://github.com/marcocosta97/grafite.git
+[submodule "adaptiveqf/external/splinterdb"]
+	path = adaptiveqf/external/splinterdb
+	url = https://github.com/vmware/splinterdb

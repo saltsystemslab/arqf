@@ -17,7 +17,7 @@ FetchContent_MakeAvailable(argparse)
 set(CMAKE_CXX_STANDARD 17)
 
 list(APPEND SUCCINCT_LIBS "sux" "sdsl-lite")
-list(APPEND Targets "memento" "bucketing" "grafite" "surf" "rosetta" "proteus" "snarf" "rencoder")
+list(APPEND Targets "memento" "bucketing" "grafite" "surf" "rosetta" "proteus" "snarf" "rencoder" "arqf")
 list(APPEND x86Targets "surf" "rosetta" "proteus" "rencoder")
 
 set(CMAKE_CXX_STANDARD 17)
@@ -68,7 +68,8 @@ function(compile_bench ds)
         else ()
             # target_compile_definitions(bench_memento INTERFACE -DUSE_LIBRARY_STL)
         endif ()
-
+    elseif (ds MATCHES "arqf")
+      target_link_libraries(bench_arqf arqflib)
     elseif (ds MATCHES "grafite")
         add_library(grafitelib INTERFACE)
         if ("sux" IN_LIST SUCCINCT_LIBS)

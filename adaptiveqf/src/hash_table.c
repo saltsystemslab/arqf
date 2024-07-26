@@ -1,4 +1,3 @@
-#include "../include/hash_table.h"
 
 
 uint64_t _murmur_64(const void *key, int len, uint64_t seed) {

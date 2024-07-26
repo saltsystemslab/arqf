@@ -14,6 +14,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND PRINT_DEBUG_LOG)
   target_compile_options(mementolib PUBLIC -DDEBUG)
 endif()
 
+add_subdirectory(adaptiveqf)
+
 if (BUILD_BENCHMARKS)
     message(STATUS "Building benchmarks")
     add_subdirectory(bench)

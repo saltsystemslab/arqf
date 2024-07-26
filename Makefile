@@ -10,5 +10,5 @@ build_bench:
 datasets: build_bench
 	mkdir -p paper_results
 	cd paper_results && bash ../bench/scripts/download_datasets.sh
-	bash ./bench/scripts/generate_datasets.sh ./build ../paper_results/real_datasets
+	cd paper_results && bash ../bench/scripts/generate_datasets.sh ../build ./real_datasets
 
