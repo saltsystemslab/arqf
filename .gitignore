@@ -6,3 +6,5 @@ build/*
 
 paper_results/*
 workloads/*
+
+adaptiveqf/obj/*
