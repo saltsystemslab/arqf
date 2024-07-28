@@ -21,9 +21,14 @@ add_library(arqflib STATIC
   ./src/hashutil.c
 )
 target_include_directories(arqflib PUBLIC . ./include ./external/splinterdb/include)
-target_compile_options(arqflib PUBLIC -O3 -m64 -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 # The order seems to matter here, aio and xxhash need to compe after SplinterDB.
 target_link_libraries(arqflib PUBLIC pthread ssl crypto m ${SPLINTERDB_FULL_PATH}/libsplinterdb.a aio xxhash)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" )
+  target_compile_options(arqflib PUBLIC -Og -m64 -DDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+else()
+  target_compile_options(arqflib PUBLIC -O3 -m64 -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+endif()
+
 # I don't think the -rpath option is working...
 #target_link_options(arqflib PUBLIC  "-Wl,-rpath=${SPLINTERDB_FULL_PATH}")
 
@@ -31,3 +36,7 @@ add_executable(test_micro ./test/test_micro.c ./src/test_driver.c)
 target_include_directories(test_micro  PUBLIC . ./include ./external/splinterdb/include)
 target_compile_options(test_micro PUBLIC -O3 -m64 -DNDEBUG)
 target_link_libraries(test_micro  PUBLIC arqflib)
+
+add_executable(test_encoding ./test/test_encoding.c)
+target_include_directories(test_encoding  PUBLIC . ./include ./external/splinterdb/include)
+target_link_libraries(test_encoding  PUBLIC arqflib)

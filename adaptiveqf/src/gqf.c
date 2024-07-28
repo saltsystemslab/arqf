@@ -1702,6 +1702,7 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 	uint64_t size;
 	uint64_t total_num_bytes;
 
+  // NICE_TO_HAVE(chesetti): Scale up nslots to nearest power of 2 (Memento does this).
 	assert(popcnt(nslots) == 1); /* nslots must be a power of 2 */
 	qbits = num_slots = nslots;
 	xnslots = nslots + 10*sqrt((double)nslots);
@@ -2832,7 +2833,153 @@ void bulk_insert_sort_hashes(const QF *qf, uint64_t *keys, int nkeys) {
 	}
 }
 
-// assumes keys are provided in sorted order (by hash)
+/*
+ * Copy the [0..buffer_offset) bits in buffer to the quotient filter, starting from slot_index.
+ * The final slot might not be fully used, in which case those bits will be set to 0.
+ * This method will handle the case of slots going across blocks and uses set_slot method under the hood.
+ * The metadata bits are NOT handled in this method.
+ */
+static inline void _keepsake_flush_mementos(
+    QF* qf,
+    uint64_t* slot_index,
+    uint64_t* buffer,
+    uint64_t* buffer_offset)
+{
+  // NICE_TO_HAVE(chesetti): Optimize flush_mementos.
+  // The flush basically writes out one slot at a time, I'm sure we could
+  // optimize it further with memcpy, but that will require needing to handle
+  // the case where slots go across blocks.
+  uint64_t bits_per_slot = qf->metadata->bits_per_slot;
+  *buffer = *buffer & BITMASK(*buffer_offset);
+  while (*buffer_offset >= bits_per_slot) {
+    printf("Writing to %lld\n", *slot_index);
+    set_slot(qf, *slot_index, *buffer);
+    *slot_index = *slot_index+1;
+    *buffer_offset -= bits_per_slot;
+    *buffer = *buffer >> bits_per_slot;
+  }
+  if (*buffer_offset > 0) {
+    set_slot(qf, *slot_index, *buffer);
+    *slot_index = *slot_index+1;
+  }
+  *buffer = 0;
+  *buffer_offset = 0;
+}
+
+static inline void _keepsake_add_remainder(
+    QF* qf,
+    const uint64_t keepsake,
+    uint64_t* buffer,
+    uint64_t* buffer_offset)
+{
+  assert(*buffer == 0);
+  assert(*buffer_offset == 0);
+  *buffer = *buffer | keepsake & BITMASK(qf->metadata->key_remainder_bits);
+  *buffer_offset = *buffer_offset + qf->metadata->key_remainder_bits;
+}
+
+/* Add the memento to a buffer, flushing to QF if the buffer overflows. 
+ * Meant to be used as helper method for bulk_load.
+ * The combintation of (current_slot, buffer, buffer_offset) can be interpreted as 
+ * internals of a builder interface.
+ * */
+static inline void _keepsake_add_memento(
+    QF* qf,
+    uint64_t memento,
+    uint64_t* current_slot, /* memento index in keepsake run */
+    uint64_t* buffer,
+    uint64_t* buffer_offset)
+{
+  uint64_t bits_per_slot = qf->metadata->bits_per_slot;
+  uint64_t bits_per_memento = qf->metadata->value_bits;
+  uint64_t slots_per_buffer = (sizeof(uint64_t) * 8) / bits_per_slot;
+  uint64_t slots_used = (*buffer_offset) / bits_per_slot;
+  memento = memento & BITMASK(bits_per_memento);
+  if (*buffer_offset + bits_per_slot <= slots_per_buffer * bits_per_slot) {
+    // Not exceeding the slots, just add the bits and be done.
+    *buffer = *buffer | (memento << *buffer_offset);
+    *buffer_offset = *buffer_offset + bits_per_memento;
+  } else {
+    int bits_left_in_last_slot = (slots_per_buffer * bits_per_slot) - (*buffer_offset);
+    // copy the bits.
+    *buffer = *buffer | (memento & BITMASK(bits_left_in_last_slot) << *buffer_offset);
+    *buffer_offset = *buffer_offset + bits_left_in_last_slot;
+    // flush.
+    _keepsake_flush_mementos(qf, current_slot, buffer, buffer_offset);
+    // copy the leftover bits
+    *buffer = *buffer | (memento >> bits_left_in_last_slot);
+    *buffer_offset = *buffer_offset + (bits_per_memento - bits_left_in_last_slot);
+  }
+}
+
+// assumes keys are provided in sorted order of (fingerprint, memento).
+// Does NOT insert extensions for keys that have the same fingerprint.
+// The sorted hash is assumed to store memento_bits in lower memento_bits,
+// followed by fingerprints in the next higher bits.
+// 000..FM (F=Fingerprint bits, M=memento bits).
+// All bits after the (fingerprint+memento) lower bits are ignored.
+void qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
+{
+  // memento is the suffix of the key.
+  // keepsake is the fingerprint remainders of the partition of the key.
+  uint64_t current_quotient = 0, current_run_start_slot = 0, current_run = 0, current_keepsake_remainder = 0, current_memento = 0;
+  uint64_t next_quotient = 0, next_keepsake_remainder = 0, next_memento = 0;
+  uint64_t slot_buffer = 0, slot_buffer_offset = 0, slot_buffer_index = 0;
+  if (nkeys > 0) {
+    current_quotient = (sorted_hashes[0] >> qf->metadata->bits_per_slot) & BITMASK(qf->metadata->quotient_bits);
+    current_run_start_slot = current_quotient;
+    current_keepsake_remainder = (sorted_hashes[0] >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
+    current_memento = (sorted_hashes[0]) & BITMASK(qf->metadata->value_bits);
+    _keepsake_add_remainder(qf, current_keepsake_remainder, &slot_buffer, &slot_buffer_offset);
+    METADATA_WORD(qf, occupieds, current_quotient) |= (1ULL << ((current_quotient) % QF_SLOTS_PER_BLOCK));
+  }
+  for (uint64_t i = 1; i < nkeys; i++) {
+    _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
+
+    next_quotient = (sorted_hashes[i] >> qf->metadata->bits_per_slot) & BITMASK(qf->metadata->quotient_bits);
+    next_keepsake_remainder = (sorted_hashes[i] >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
+    next_memento = (sorted_hashes[i]) & BITMASK(qf->metadata->value_bits);
+
+    if (next_quotient == current_quotient && next_keepsake_remainder != current_keepsake_remainder) {
+      _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
+      // Mark end of keepsake run.
+      METADATA_WORD(qf, runends, slot_buffer_index - 1) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
+      METADATA_WORD(qf, extensions, slot_buffer_index - 1) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
+      // Start new keepsake.
+      _keepsake_add_remainder(qf, next_keepsake_remainder, &slot_buffer, &slot_buffer_offset);
+    } else if (next_quotient != current_quotient) {
+      _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
+      // Mark runend of this quotient run.
+      METADATA_WORD(qf, runends, slot_buffer_index - 1) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
+      uint64_t start_block = (current_run_start_slot + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
+      uint64_t end_block = (slot_buffer_index - 1 + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
+      while (start_block < end_block) {
+        qf->blocks[start_block].offset = (slot_buffer_index - 1) - (start_block * QF_SLOTS_PER_BLOCK);
+        start_block++;
+      }
+
+      current_quotient = (sorted_hashes[i] >> qf->metadata->bits_per_slot) & BITMASK(qf->metadata->quotient_bits);
+      if (slot_buffer_index < current_quotient)
+        slot_buffer_index = current_quotient;
+      current_run_start_slot = slot_buffer_index;
+      METADATA_WORD(qf, occupieds, current_quotient) |= (1ULL << ((current_quotient) % QF_SLOTS_PER_BLOCK));
+      _keepsake_add_remainder(qf, next_keepsake_remainder, &slot_buffer, &slot_buffer_offset);
+    }
+    current_quotient = next_quotient;
+    current_keepsake_remainder = next_keepsake_remainder;
+    current_memento = next_memento;
+  }
+  _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
+  _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
+  METADATA_WORD(qf, runends, slot_buffer_index - 1) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
+  uint64_t start_block = (current_run_start_slot + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
+  uint64_t end_block = (slot_buffer_index - 1 + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
+  while (start_block < end_block) {
+    qf->blocks[start_block].offset = (slot_buffer_index - 1) - (start_block * QF_SLOTS_PER_BLOCK);
+    start_block++;
+  }
+}
+
 // use the bulk_insert_sort function to ensure sorted order (to be implemented)
 // also assumes the qf is empty
 // assumes the item in the list have already been hashed
@@ -2844,7 +2991,7 @@ void qf_bulk_insert(const QF *qf, uint64_t *keys, int nkeys) {
 	uint64_t current_index = 0, current_run, current_rem, current_ext, current_ext_len = 0, current_count = 1, next_run, next_rem, next_ext;
 	if (nkeys > 0) {
 		current_run = (keys[0] >> qf->metadata->bits_per_slot) & BITMASK(qf->metadata->quotient_bits);
-		current_rem = keys[0] & BITMASK(qf->metadata->bits_per_slot);
+		current_rem = keys[0] & BITMASK(qf->metadata->bits_per_slot); // This should not be bits_per_slot, but fingerprint size.
 		current_ext = keys[0] >> (qf->metadata->quotient_bits + qf->metadata->bits_per_slot);
 		current_index = current_run;
 		METADATA_WORD(qf, occupieds, current_run) |= (1ULL << (current_run % QF_SLOTS_PER_BLOCK));
@@ -3082,4 +3229,3 @@ uint64_t qf_magnitude(const QF *qf)
 {
 	return sqrt(qf_inner_product(qf, qf));
 }
-
