@@ -293,6 +293,7 @@ extern "C" {
 	 */
 	//int qfi_get_hash(const QFi *qfi, uint64_t *hash, uint64_t *count);
 	int qfi_get_hash(const QFi *qfi, uint64_t *rem, uint64_t *ext, int *ext_len, uint64_t *count);
+	int qfi_get_memento_hash(const QFi *qfi, uint64_t *hash);
 
 	/* Advance to next entry.
 	 * Return value:

@@ -1,14 +1,17 @@
 - [X] Implement `qf malloc`
-- [ ] Implement `qf_bulk_load` and `qf_iterator`
-  - [ ] Implement `qf_set_memento(keepsake_index, num_extensions, memento_index, memento_value)`
-  - [ ] Implement `qf_get_memento(keepsake_index, num_extensions, memento_index)`
-   - The tricky part in the above is that a memento span blocks.
-  - Alternate interface
+- [X] Implement `qf_bulk_load` and `qf_iterator`
+   - `qf_bulk_load`
     - `keepsake_add_bits(keepsake_slot_index, value, nbits, *keepsake_buffer, *keepsake_slot_offset)`
     - `keepsake_flush_bits(keepsake_slot_index, *keepsake_buffer, *keepsake_slot_offset)`
-  - [ ] Understand reverse hash map functionality 
-- [ ] Write verification functions/unit tests with above two
+  - `qf_iterator`
+- [X] Write verification functions/unit tests with above two
 - [ ] Implement point query 
 - [ ] Implement range query
+- [ ] Write verification functions/unit tests again
 - [ ] Run benchmarks, check sanity - You should have a correct range filter now
+- [ ] Understand reverse hash map functionality 
 - [ ] Implement adaptivity.
+- [ ] Implement `qf_set_memento(keepsake_index, num_extensions, memento_index, memento_value)`
+- [ ] Implement `qf_get_memento(keepsake_index, num_extensions, memento_index)`
+
+- [ ] Add warning if quotient + extension + memento exceeds 64 bits.
