@@ -29,12 +29,13 @@ use_numa = False
 membind = 0
 physcpubind = 16
 
-ds_list = ["memento", "grafite", "surf", "rosetta", "snarf", "proteus", "rencoder"]
+ds_list = ["memento", "arqf"] #, "rosetta", "snarf", "proteus", "rencoder", "arqf"]
 # ds_list_with_bucketing = ds_list.copy() + ['bucketing']
 
 ds_benchmark_executables = {}
 
 ds_parameters = {'memento': list(np.linspace(8, 28, 6)),  # eps
+                 'arqf': list(np.linspace(8, 28, 6)), # eps
                  'grafite': list(np.linspace(8, 28, 6)),  # eps
                  'surf': [1, 4, 7, 10, 13, 16],  # suffix bits
                  'snarf': list(np.linspace(8, 28, 6)),  # bpk
@@ -43,6 +44,7 @@ ds_parameters = {'memento': list(np.linspace(8, 28, 6)),  # eps
                  'rencoder': list(np.linspace(8, 28, 6))}  # bpk
 
 ds_parameters_small_universe = {'memento': list(np.linspace(7, 12, 6)),  # eps
+                                'arqf' : list(np.linspace(7, 12, 6)),
                                 'grafite': list(np.linspace(7, 12, 6)),  # eps
                                 'surf': [0, 1, 2, 3, 4, 5],  # suffix bits
                                 'snarf': list(np.linspace(7, 12, 6)),  # bpk
@@ -74,7 +76,7 @@ ds_parameters_small_universe = {'memento': list(np.linspace(7, 12, 6)),  # eps
 #
 
 def execute_test(ds, keys_path, data, path_csv):
-    print(keys_path)
+    print("KEYS_PATH: ", keys_path, data)
 
     if keys_path and 'fb' in str(keys_path):
         param = ds_parameters_small_universe[ds]
@@ -86,7 +88,6 @@ def execute_test(ds, keys_path, data, path_csv):
             command = f'numactl --membind={membind} --physcpubind={physcpubind} {ds_benchmark_executables[ds]} {arg} --keys {keys_path} --workload {data["left"]} {data["right"]} --csv {path_csv}'
         else:
             command = f'{ds_benchmark_executables[ds]} {arg} --keys {keys_path} --workload {data["left"]} {data["right"]} --csv {path_csv}'
-
         print('{:^24s}'.format(f"[ starting \"{command}\"]"))
         stream = os.popen(command)
         print(stream.read())
@@ -209,6 +210,7 @@ if __name__ == "__main__":
     elif test_name == 'corr':
         ds_parameters = {'memento': [20],
                          'grafite': [20],
+                         'arqf': [20],
                          'surf': [10],  # suffix bits
                          'snarf': [20],  # bpk
                          'rosetta': [20],  # bpk

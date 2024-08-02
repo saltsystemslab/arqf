@@ -141,7 +141,7 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
     while ((1ULL << key_size) <= n_slots)
         key_size++;
     key_size += fingerprint_size;
-    std::cerr << "fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
+    std::cerr << "key_size="<< key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
 
     QF *qf = (QF *) malloc(sizeof(QF));
     qf_malloc(qf, n_slots, key_size, memento_bits, QF_HASH_DEFAULT, seed);
@@ -155,11 +155,17 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
     const uint64_t memento_mask = (1ULL << memento_bits) - 1;
     const uint64_t hash_mask = (1ULL << key_size) - 1;
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
+            // Why not just take the MurmurHash? Is there a reason for this?
+            // Get the prefix bucket
             auto y = x >> memento_bits;
+            // Hash the prefix bucket
             uint64_t hash = MurmurHash64A(((void *)&y), sizeof(y), seed) & hash_mask;
+            // Take last quotient size bits, and MODULO n_slots
             const uint64_t address = fast_reduce((hash & address_mask) << (32 - address_size),
                                                     n_slots);
+            // combine the hash with the fingerprint.. why (hash >> address_size though?)
             hash = (hash >> address_size) | (address << fingerprint_size);
+            // Final hash to add to quotient filter, with memento as suffix.
             return (hash << memento_bits) | (x & memento_mask);
             });
     /*

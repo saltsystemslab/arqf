@@ -1710,7 +1710,7 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 	uint64_t total_num_bytes;
 
   // NICE_TO_HAVE(chesetti): Scale up nslots to nearest power of 2 (Memento does this).
-	assert(popcnt(nslots) == 1); /* nslots must be a power of 2 */
+	//assert(popcnt(nslots) == 1); /* nslots must be a power of 2 */
 	qbits = num_slots = nslots;
 	xnslots = nslots + 10*sqrt((double)nslots);
 	nblocks = (xnslots + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
@@ -1719,6 +1719,7 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 		key_remainder_bits--;
 		nslots >>= 1;
 	}
+    key_remainder_bits -= (popcnt(num_slots) > 1);
 	assert(key_remainder_bits >= 2);
 
 	bits_per_slot = key_remainder_bits + value_bits;
@@ -1749,11 +1750,13 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 	qf->metadata->value_bits = value_bits;
 	qf->metadata->key_remainder_bits = key_remainder_bits;
 	qf->metadata->bits_per_slot = bits_per_slot;
-	qf->metadata->quotient_bits = 0;
+	qf->metadata->quotient_bits = key_bits - key_remainder_bits - value_bits;
+	#if 0
 	while (qbits > 1) {
 		qbits >>= 1;
 		qf->metadata->quotient_bits++;
 	}
+	#endif
 	qf->metadata->quotient_remainder_bits = qf->metadata->quotient_bits + qf->metadata->bits_per_slot;
 
 	qf->metadata->range = qf->metadata->nslots;
@@ -2603,7 +2606,7 @@ int qfi_next(QFi *qfi) {
     }
   }
 
-  int next_memento_spans_multiple_slots = (qfi->intra_slot_offset + qfi->qf->metadata->value_bits > qfi->qf->metadata->bits_per_slot) ? 1
+  int next_memento_spans_multiple_slots = (qfi->intra_slot_offset + qfi->qf->metadata->value_bits > qfi->qf->metadata->bits_per_slot) ? 1 : 0;
   uint64_t next_memento = 0;
   if (next_memento_spans_multiple_slots && is_keepsake_or_quotient_runend(qfi->qf, qfi->current)) {
     // Not enough bits for a new memento. point to the new keepsake.
@@ -3056,6 +3059,105 @@ void qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
     qf->blocks[start_block].offset = (slot_buffer_index - 1) - (start_block * QF_SLOTS_PER_BLOCK);
     start_block++;
   }
+}
+
+int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
+  uint64_t hash = key;
+  if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
+    abort(); 
+  }
+  uint64_t memento = hash & BITMASK(qf->metadata->value_bits);
+  uint64_t remainder = (hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
+  uint64_t quotient = (hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
+
+  QFi qfi;
+	qf_iterator_from_position(qf, &qfi, quotient);
+  // TODO(chesetti): You need a qfi_iterator_from_fingerprint() method.
+  while (!qfi_end(&qfi) && qfi.current_remainder <= remainder && qfi.run  == quotient) {
+    if (qfi.current_remainder < remainder) {
+      qfi_next(&qfi);
+      continue;
+    }
+    if (qfi.current_remainder > remainder) {
+      break;
+    }
+    if (qfi.current_memento == memento) return 1;
+    if (qfi.current_memento > memento) return 0;
+    qfi_next(&qfi);
+  }
+  return 0;
+}
+
+int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) {
+  uint64_t l_hash = l_key;
+  uint64_t r_hash = r_key;
+  if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
+    // TODO(chesetti): Ask about the need for reducing to nslots - Is it really needed?
+    // There's also some stuff related to Infinifilter.
+    // Until then, just hash the key beforehand in query.
+    abort(); 
+  }
+  uint64_t l_remainder = (l_hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
+  uint64_t l_quotient = (l_hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
+  uint64_t l_memento = l_hash & BITMASK(qf->metadata->value_bits);
+
+  uint64_t r_remainder = (r_hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
+  uint64_t r_quotient = (r_hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
+  uint64_t r_memento = r_hash & BITMASK(qf->metadata->value_bits);
+
+  if (l_remainder == r_remainder && r_quotient == r_quotient) {
+    // Same keepsake box.
+    // Find any memento that lies between l_memento and r_memento.
+    QFi qfi;
+    qf_iterator_from_position(qf, &qfi, l_quotient);
+    while (!qfi_end(&qfi) && qfi.current_remainder <= l_remainder && qfi.run == l_quotient) {
+      if (qfi.current_remainder < l_remainder) {
+        qfi_next(&qfi);
+        continue;
+      }
+      if (qfi.current_memento < l_memento) {
+        qfi_next(&qfi);
+        continue;
+      }
+      if (qfi.current_memento >= l_memento && qfi.current_memento <= r_memento) {
+        return 1;
+      }
+      if (qfi.current_memento > r_memento) {
+        return 0;
+      }
+    }
+    return 0;
+  }
+
+  QFi l_qfi;
+  qf_iterator_from_position(qf, &l_qfi, l_quotient);
+  if (l_quotient == l_qfi.run) {
+    while (!qfi_end(&l_qfi) && l_qfi.run == l_quotient && l_qfi.current_remainder <= l_remainder) {
+      qfi_next(&l_qfi);
+    }
+    if (l_quotient == l_qfi.run && l_remainder == l_qfi.current_remainder) {
+      while (!qfi_end(&l_qfi) && l_qfi.current_remainder == l_remainder && l_qfi.run == l_quotient) {
+        if (l_qfi.current_memento >= l_remainder) {
+          return 1;
+        }
+        qfi_next(&l_qfi);
+      }
+    }
+  }
+  
+  QFi r_qfi;
+  qf_iterator_from_position(qf, &r_qfi, r_quotient);
+  if (r_quotient == r_qfi.run) {
+    while (!qfi_end(&r_qfi) && r_qfi.run == r_quotient && r_qfi.current_remainder <= r_remainder) {
+      qfi_next(&r_qfi);
+    }
+  }
+  if (r_qfi.run == r_quotient && r_remainder == r_qfi.current_remainder) {
+    if (r_qfi.current_memento <= r_remainder) {
+      return 1;
+    }
+  }
+  return 0;
 }
 
 // use the bulk_insert_sort function to ensure sorted order (to be implemented)

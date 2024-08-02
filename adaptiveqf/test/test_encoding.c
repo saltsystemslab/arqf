@@ -7,7 +7,7 @@
 #define BITMASK(nbits) \
   ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
 
-const uint64_t nslots = 256;
+const uint64_t nslots = 200;
 const uint64_t key_bits = 13;
 const uint64_t memento_bits = 4; // bits_per_slot should be 9 now.
 
@@ -36,6 +36,12 @@ void test_bulk_load() {
     idx++;
   }
   assert(idx == nkeys);
+
+
+  for (uint64_t i=0; i < nkeys; i++) {
+    assert(qf_point_query(&qf, sorted_hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
+  }
+
   qf_free(&qf);
 }
 

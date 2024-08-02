@@ -7,7 +7,12 @@
 - [X] Write verification functions/unit tests with above two
 - [ ] Implement point query 
 - [ ] Implement range query
+- [ ] Optimize
+  - [ ] Do we need the second HASH function?
+  - [ ] Binary search for search
+  - [ ] Skip entire keepsake boxes in query (jump tp next runend)
 - [ ] Write verification functions/unit tests again
+-   [ ] Port all memento tests?
 - [ ] Run benchmarks, check sanity - You should have a correct range filter now
 - [ ] Understand reverse hash map functionality 
 - [ ] Implement adaptivity.

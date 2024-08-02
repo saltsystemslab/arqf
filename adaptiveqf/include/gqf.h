@@ -385,7 +385,7 @@ extern "C" {
    *  not needed. Return 2 if the result is a positive, but the corresponding
    *  fingerprint can be rejuvenated.
    * May return QF_COULDNT_LOCK if called with QF_TRY_LOCK.  */
-  int qf_point_query(const QF* qf, uint64_t key, uint64_t memento, uint8_t flags);
+  int qf_point_query(const QF* qf, uint64_t key, uint8_t flags);
 
    //TODO(chesetti): Implement qf_range_query
   /*  Checks the memento filter for the existence of any point in the range
@@ -394,8 +394,7 @@ extern "C" {
    *  but rejuvenation is not needed. Return 2 if the result is a positive,
    *  but at least one of the corresponding fingerprints can be rejuvenated.
    * May return QF_COULDNT_LOCK if called with QF_TRY_LOCK.  */
-  int qf_range_query(const QF *qf, uint64_t l_key, uint64_t l_memento,
-      uint64_t r_key, uint64_t r_memento, uint8_t flags);
+  int qf_range_query(const QF *qf, uint64_t l_key, uint64_t r_key, uint8_t flags);
 										
 
 #ifdef __cplusplus
