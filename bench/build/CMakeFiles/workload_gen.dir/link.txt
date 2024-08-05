@@ -1,1 +1,0 @@
-/usr/bin/c++  -march=native -O3 -DNDEBUG CMakeFiles/workload_gen.dir/workload_gen.cpp.o -o workload_gen 

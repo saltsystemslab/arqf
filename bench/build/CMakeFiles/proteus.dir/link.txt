@@ -1,2 +1,0 @@
-/usr/bin/ar qc libproteus.a CMakeFiles/proteus.dir/filters/Proteus/include/config.cpp.o CMakeFiles/proteus.dir/filters/Proteus/include/clhash.cpp.o CMakeFiles/proteus.dir/filters/Proteus/include/prefixbf.cpp.o CMakeFiles/proteus.dir/filters/Proteus/include/MurmurHash3.cpp.o CMakeFiles/proteus.dir/filters/Proteus/include/util.cpp.o CMakeFiles/proteus.dir/filters/Proteus/include/modeling.cpp.o
-/usr/bin/ranlib libproteus.a
