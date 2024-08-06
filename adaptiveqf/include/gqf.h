@@ -364,8 +364,9 @@ extern "C" {
      * order bits of these values must be the slot address, the lower order
      * bits just after them the fingerprint, and the remaining lowest order
      * bits, the mementos.
+     * returns 0 if load was succesful, otherwise QF_INVALID.
      */
-	void qf_bulk_load(QF *qf, uint64_t *sorted_hashes, uint64_t n);
+	int qf_bulk_load(QF *qf, uint64_t *sorted_hashes, uint64_t n);
 
    //TODO(chesetti): Implement qf_insert_mementos
   /* Increment the counter for this key/value pair by count. 
@@ -395,7 +396,7 @@ extern "C" {
    *  but at least one of the corresponding fingerprints can be rejuvenated.
    * May return QF_COULDNT_LOCK if called with QF_TRY_LOCK.  */
   int qf_range_query(const QF *qf, uint64_t l_key, uint64_t r_key, uint8_t flags);
-										
+
 
 #ifdef __cplusplus
 }

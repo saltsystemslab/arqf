@@ -79,13 +79,40 @@ static inline uint32_t fast_reduce(uint32_t hash, uint32_t n) {
     return (uint32_t) (((uint64_t) hash * n) >> 32);
 }
 
-inline void check_iteration_validity(QF *qf, bool mode)
+inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
 {
     QFi iter;
     qf_iterator_from_position(qf, &iter, 0);
-    uint64_t hash_result, memento_result[256];
-    uint64_t last_run = iter.run, last_fingerprint = 0, current_fingerprint;
-    uint64_t cnt = 0;
+    uint64_t hash_result;
+    uint64_t cur_key = 0;
+
+    while (!qfi_end(&iter)) {
+      qfi_get_memento_hash(&iter, &hash_result);
+      if (hashes[cur_key] != hash_result) {
+        printf("Iterator did not match sorted hash order\n");
+        printf("%lld\n%016llx\n%016llx\n", cur_key, hashes[cur_key], hash_result);
+        abort();
+      }
+      while (hashes[cur_key] == hash_result) {
+        cur_key++;
+      };
+      qfi_next(&iter);
+    }
+    assert(cur_key == nkeys);
+
+    for (uint64_t i=0; i<nkeys; i++) {
+      if (qf_point_query(qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 0) {
+        abort();
+      }
+    }
+
+    for (uint64_t i=1; i<nkeys; i++) {
+      uint64_t k = (hashes[i] + hashes[i-1]) >> 1;
+      if (k == hashes[i] || k == hashes[i-1]) continue;
+      if (qf_point_query(qf, k, QF_KEY_IS_HASH | QF_NO_LOCK) == 1) {
+        abort();
+      }
+    }
 
 #if 0
     do {
@@ -119,7 +146,7 @@ inline void check_iteration_validity(QF *qf, bool mode)
 #endif
 }
 
-uint64_t memento_hash(uint64_t x, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
+uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
 {
   const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
   const uint64_t memento_mask =  (1ULL << memento_bits) - 1;
@@ -127,7 +154,7 @@ uint64_t memento_hash(uint64_t x, uint64_t quotient_bits, uint64_t remainder_bit
   auto y = x >> memento_bits;
   uint64_t hash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
   const uint64_t address = fast_reduce((hash & quotient_mask) << (32 - quotient_bits),
-      quotient_mask + 1);
+      n_slots);
   hash = (hash >> quotient_bits) | (address << remainder_bits);
   return (hash << memento_bits) | (x & memento_mask);
 }
@@ -174,34 +201,24 @@ inline QF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args.
     const uint64_t memento_mask = (1ULL << memento_bits) - 1;
     const uint64_t hash_mask = (1ULL << key_size) - 1;
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-            auto y = x >> memento_bits;
-            uint64_t hash = MurmurHash64A(((void *)&y), sizeof(y), seed) & hash_mask;
-            const uint64_t address = fast_reduce((hash & address_mask) << (32 - address_size),
-                                                    n_slots);
-            hash = (hash >> address_size) | (address << fingerprint_size);
-            hash = (hash << memento_bits) | (x & memento_mask);
-            #if 0
-            if (hash != memento_hash(x, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed)) {
-              fprintf(stdout, "quotient_bits size: %lld %lld\n", address_size, qf->metadata->quotient_bits);
-              fprintf(stdout, "key size: %lld %lld\n", key_size, qf->metadata->quotient_bits + qf->metadata->key_remainder_bits);
-              fprintf(stdout, "remainder size: %lld %lld\n", fingerprint_size, qf->metadata->key_remainder_bits);
-              fprintf(stdout, "Check the hash function!\n");
-              abort();
-            }
-            #endif
-            return hash;
-            });
+      return memento_hash(x, n_slots, address_size, fingerprint_size, memento_bits, seed);
+    });
+
     /*
      * The following code uses the Boost library to sort the elements in a single thread, via spreadsort function.
      * This function is faster than std::sort and exploits the fact that the size of the maximum hash is bounded
      * via hybrid radix sort.
      */
     boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
-    qf_bulk_load(qf, &key_hashes[0], key_hashes.size());
+    int retcode = qf_bulk_load(qf, &key_hashes[0], key_hashes.size());
+    if (retcode < 0) {
+      std::cerr << "Failed to initialize iterator" << std::endl;
+      abort();
+    }
 
     stop_timer(build_time);
 
-    // check_iteration_validity(qf, false);
+    check_iteration_validity(qf, &key_hashes[0], key_hashes.size());
 
     return qf;
 }
@@ -209,14 +226,16 @@ inline QF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args.
 template <typename value_type>
 inline bool query_arqf(QF *qf, const value_type left, const value_type right)
 {
-    uint64_t l_hash = memento_hash(left, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
-    uint64_t r_hash = memento_hash(right, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
+    uint64_t l_hash = memento_hash(left, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
+    uint64_t r_hash = memento_hash(right, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
 
+    int result;
     if (left == right) {
-      return qf_point_query(qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+      result = qf_point_query(qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+    } else {
+      result = qf_range_query(qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
     }
-
-    return qf_range_query(qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+    return result;
 }
 
 inline size_t size_arqf(QF *f)
@@ -248,4 +267,3 @@ int main(int argc, char const *argv[])
 
     return 0;
 }
-

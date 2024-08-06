@@ -57,8 +57,9 @@ void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double p
         const auto [left, right, original_result] = q;
 
         bool query_result = range_f(f, left, right);
-        if (query_result && !original_result)
+        if (query_result && !original_result) {
             fp++;
+        }
         else if (!query_result && original_result)
         {
             std::cerr << "[!] alert, found false negative!" << std::endl;

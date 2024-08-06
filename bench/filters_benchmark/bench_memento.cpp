@@ -155,17 +155,11 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
     const uint64_t memento_mask = (1ULL << memento_bits) - 1;
     const uint64_t hash_mask = (1ULL << key_size) - 1;
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-            // Why not just take the MurmurHash? Is there a reason for this?
-            // Get the prefix bucket
             auto y = x >> memento_bits;
-            // Hash the prefix bucket
             uint64_t hash = MurmurHash64A(((void *)&y), sizeof(y), seed) & hash_mask;
-            // Take last quotient size bits, and MODULO n_slots
             const uint64_t address = fast_reduce((hash & address_mask) << (32 - address_size),
                                                     n_slots);
-            // combine the hash with the fingerprint.. why (hash >> address_size though?)
             hash = (hash >> address_size) | (address << fingerprint_size);
-            // Final hash to add to quotient filter, with memento as suffix.
             return (hash << memento_bits) | (x & memento_mask);
             });
     /*
@@ -179,7 +173,7 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
 
     stop_timer(build_time);
 
-    check_iteration_validity(qf, false);
+    // check_iteration_validity(qf, false);
 
     return qf;
 }

@@ -1704,12 +1704,13 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 								 enum qf_hashmode hash, uint32_t seed, void* buffer, uint64_t
 								 buffer_len)
 {
+  // key_bits does not include value (memento bits).
 	uint64_t num_slots, xnslots, nblocks, qbits;
 	uint64_t key_remainder_bits, bits_per_slot;
 	uint64_t size;
 	uint64_t total_num_bytes;
 
-  // NICE_TO_HAVE(chesetti): Scale up nslots to nearest power of 2 (Memento does this).
+  // Scale up nslots to nearest power of 2 (Memento does this).
 	//assert(popcnt(nslots) == 1); /* nslots must be a power of 2 */
 	qbits = num_slots = nslots;
 	xnslots = nslots + 10*sqrt((double)nslots);
@@ -1719,7 +1720,7 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 		key_remainder_bits--;
 		nslots >>= 1;
 	}
-    key_remainder_bits -= (popcnt(num_slots) > 1);
+  key_remainder_bits -= (popcnt(num_slots) > 1);
 	assert(key_remainder_bits >= 2);
 
 	bits_per_slot = key_remainder_bits + value_bits;
@@ -1750,7 +1751,7 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 	qf->metadata->value_bits = value_bits;
 	qf->metadata->key_remainder_bits = key_remainder_bits;
 	qf->metadata->bits_per_slot = bits_per_slot;
-	qf->metadata->quotient_bits = key_bits - key_remainder_bits - value_bits;
+	qf->metadata->quotient_bits = key_bits - key_remainder_bits;
 	#if 0
 	while (qbits > 1) {
 		qbits >>= 1;
@@ -2364,7 +2365,7 @@ int64_t qf_iterator_from_position(const QF *qf, QFi *qfi, uint64_t position)
 	assert(position < qf->metadata->nslots);
 	if (!is_occupied(qf, position)) {
 		uint64_t block_index = position / QF_SLOTS_PER_BLOCK;
-		uint64_t idx = bitselectv(get_block(qf, block_index)->occupieds[0], position-1, 0);
+		uint64_t idx = bitselectv(get_block(qf, block_index)->occupieds[0], position, 0);
 		if (idx == 64) {
 			while(idx == 64 && block_index < qf->metadata->nblocks) {
 				block_index++;
@@ -2546,7 +2547,7 @@ int qfi_get_memento(const QFi *qfi, uint64_t *memento)
 static inline int qfi_start_new_keepsake(QFi* qfi)
 {
   qfi->intra_slot_offset = 0;
-  if (qfi->current >= qfi->qf->metadata->nslots)
+  if (qfi->current >= qfi->qf->metadata->xnslots)
     return QFI_INVALID;
 
   assert(is_keepsake_or_quotient_runend(qfi->qf, qfi->current - 1));
@@ -2568,7 +2569,7 @@ static inline int qfi_start_new_keepsake(QFi* qfi)
     qfi->intra_slot_offset += qfi->qf->metadata->key_remainder_bits;
     qfi->current_memento = (get_slot(qfi->qf, qfi->current) >> qfi->intra_slot_offset) & BITMASK(qfi->qf->metadata->value_bits);
     qfi->num_extensions = 0;
-    if (qfi->current >= qfi->qf->metadata->nslots)
+    if (qfi->current >= qfi->qf->metadata->xnslots)
       return QFI_INVALID;
     return 0;
   } else if (is_keepsake_or_quotient_runend(qfi->qf, qfi->current - 1)) {
@@ -2934,13 +2935,13 @@ static inline void _keepsake_flush_mementos(
   uint64_t bits_per_slot = qf->metadata->bits_per_slot;
   *buffer = *buffer & BITMASK(*buffer_offset);
   while (*buffer_offset >= bits_per_slot) {
-    set_slot(qf, *slot_index, *buffer);
+    set_slot(qf, (*slot_index), (*buffer) & BITMASK(qf->metadata->bits_per_slot));
     *slot_index = *slot_index+1;
-    *buffer_offset -= bits_per_slot;
-    *buffer = *buffer >> bits_per_slot;
+    *buffer_offset = (*buffer_offset - bits_per_slot);
+    *buffer = (*buffer >> bits_per_slot);
   }
   if (*buffer_offset > 0) {
-    set_slot(qf, *slot_index, *buffer);
+    set_slot(qf, *slot_index, (*buffer) & BITMASK(*buffer_offset));
     *slot_index = *slot_index+1;
   }
   *buffer = 0;
@@ -2999,7 +3000,7 @@ static inline void _keepsake_add_memento(
 // followed by fingerprints in the next higher bits.
 // 000..FM (F=Fingerprint bits, M=memento bits).
 // All bits after the (fingerprint+memento) lower bits are ignored.
-void qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
+int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
 {
   // memento is the suffix of the key.
   // keepsake is the fingerprint remainders of the partition of the key.
@@ -3009,17 +3010,35 @@ void qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
   if (nkeys > 0) {
     current_quotient = (sorted_hashes[0] >> qf->metadata->bits_per_slot) & BITMASK(qf->metadata->quotient_bits);
     current_run_start_slot = current_quotient;
+    slot_buffer_index = current_run_start_slot;
     current_keepsake_remainder = (sorted_hashes[0] >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
     current_memento = (sorted_hashes[0]) & BITMASK(qf->metadata->value_bits);
     _keepsake_add_remainder(qf, current_keepsake_remainder, &slot_buffer, &slot_buffer_offset);
     METADATA_WORD(qf, occupieds, current_quotient) |= (1ULL << ((current_quotient) % QF_SLOTS_PER_BLOCK));
   }
-  for (uint64_t i = 1; i < nkeys; i++) {
-    _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
 
+  int should_add_memento = 1;
+  for (uint64_t i = 1; i < nkeys; i++) {
+
+    if (slot_buffer_index > qf->metadata->xnslots) {
+      return QF_INVALID;
+    }
+    if (should_add_memento) {
+      _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
+    }
+
+    if (sorted_hashes[i] < sorted_hashes[i-1]) {
+      return QF_INVALID;
+    }
     next_quotient = (sorted_hashes[i] >> qf->metadata->bits_per_slot) & BITMASK(qf->metadata->quotient_bits);
     next_keepsake_remainder = (sorted_hashes[i] >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
     next_memento = (sorted_hashes[i]) & BITMASK(qf->metadata->value_bits);
+
+    if (next_quotient == current_quotient && next_keepsake_remainder == current_keepsake_remainder && next_memento == current_memento) {
+      should_add_memento = 0;
+      continue;
+    }
+    should_add_memento = 1;
 
     if (next_quotient == current_quotient && next_keepsake_remainder != current_keepsake_remainder) {
       _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
@@ -3032,14 +3051,18 @@ void qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
       _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
       // Mark runend of this quotient run.
       METADATA_WORD(qf, runends, slot_buffer_index - 1) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
-      uint64_t start_block = (current_run_start_slot + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
-      uint64_t end_block = (slot_buffer_index - 1 + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
-      while (start_block < end_block) {
-        get_block(qf, start_block)->offset = (slot_buffer_index - 1) - (start_block * QF_SLOTS_PER_BLOCK);
-        start_block++;
+      uint64_t cur_block = (current_quotient + QF_SLOTS_PER_BLOCK) / QF_SLOTS_PER_BLOCK;
+      uint64_t offset = (slot_buffer_index) - (cur_block * QF_SLOTS_PER_BLOCK);
+      while (cur_block * QF_SLOTS_PER_BLOCK <= next_quotient) {
+        offset = (slot_buffer_index) - (cur_block * QF_SLOTS_PER_BLOCK);
+			  if (offset < BITMASK(8*sizeof(qf->blocks[0].offset))) {
+          get_block(qf, cur_block)->offset = (uint8_t)offset;
+        } else {
+          get_block(qf, cur_block)->offset = (uint8_t)BITMASK(8*sizeof(qf->blocks[0].offset));
+        }
+        cur_block++;
       }
-
-      current_quotient = (sorted_hashes[i] >> qf->metadata->bits_per_slot) & BITMASK(qf->metadata->quotient_bits);
+      current_quotient = (sorted_hashes[i] >> qf->metadata->bits_per_slot) & (BITMASK(qf->metadata->quotient_bits));
       if (slot_buffer_index < current_quotient)
         slot_buffer_index = current_quotient;
       current_run_start_slot = slot_buffer_index;
@@ -3052,13 +3075,18 @@ void qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
   }
   _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
   _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
-  METADATA_WORD(qf, runends, slot_buffer_index - 1) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
-  uint64_t start_block = (current_run_start_slot + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
-  uint64_t end_block = (slot_buffer_index - 1 + QF_SLOTS_PER_BLOCK - 1) / QF_SLOTS_PER_BLOCK;
-  while (start_block < end_block) {
-    qf->blocks[start_block].offset = (slot_buffer_index - 1) - (start_block * QF_SLOTS_PER_BLOCK);
-    start_block++;
+  METADATA_WORD(qf, runends, slot_buffer_index) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
+  uint64_t cur_block = (current_run_start_slot + QF_SLOTS_PER_BLOCK) / QF_SLOTS_PER_BLOCK;
+  while (cur_block * QF_SLOTS_PER_BLOCK <= slot_buffer_index) {
+      uint64_t offset = (slot_buffer_index) - (cur_block * QF_SLOTS_PER_BLOCK);
+			if (offset < BITMASK(8*sizeof(qf->blocks[0].offset))) {
+        get_block(qf, cur_block)->offset = offset;
+      } else {
+        get_block(qf, cur_block)->offset = BITMASK(8*sizeof(qf->blocks[0].offset));
+      }
+    cur_block++;
   }
+  return 0;
 }
 
 int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
@@ -3092,9 +3120,6 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   uint64_t l_hash = l_key;
   uint64_t r_hash = r_key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    // TODO(chesetti): Ask about the need for reducing to nslots - Is it really needed?
-    // There's also some stuff related to Infinifilter.
-    // Until then, just hash the key beforehand in query.
     abort(); 
   }
   uint64_t l_remainder = (l_hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
@@ -3105,24 +3130,25 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   uint64_t r_quotient = (r_hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
   uint64_t r_memento = r_hash & BITMASK(qf->metadata->value_bits);
 
-  if (l_remainder == r_remainder && r_quotient == r_quotient) {
+  if (l_remainder == r_remainder && l_quotient == r_quotient) {
     // Same keepsake box.
     // Find any memento that lies between l_memento and r_memento.
     QFi qfi;
     qf_iterator_from_position(qf, &qfi, l_quotient);
-    while (!qfi_end(&qfi) && qfi.current_remainder <= l_remainder && qfi.run == l_quotient) {
-      if (qfi.current_remainder < l_remainder) {
-        qfi_next(&qfi);
-        continue;
-      }
+
+    while (!qfi_end(&qfi) && qfi.run == l_quotient && qfi.current_remainder < l_remainder) {
+      qfi_next(&qfi);
+    }
+
+    while (!qfi_end(&qfi) && qfi.run == l_quotient && qfi.current_remainder == l_remainder) {
       if (qfi.current_memento < l_memento) {
         qfi_next(&qfi);
         continue;
       }
-      if (qfi.current_memento >= l_memento && qfi.current_memento <= r_memento) {
+      // Now we are greater than or equal to l_memento
+      if (qfi.current_memento <= r_memento) {
         return 1;
-      }
-      if (qfi.current_memento > r_memento) {
+      } else {
         return 0;
       }
     }
@@ -3132,12 +3158,12 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   QFi l_qfi;
   qf_iterator_from_position(qf, &l_qfi, l_quotient);
   if (l_quotient == l_qfi.run) {
-    while (!qfi_end(&l_qfi) && l_qfi.run == l_quotient && l_qfi.current_remainder <= l_remainder) {
+    while (!qfi_end(&l_qfi) && l_qfi.run == l_quotient && l_qfi.current_remainder < l_remainder) {
       qfi_next(&l_qfi);
     }
     if (l_quotient == l_qfi.run && l_remainder == l_qfi.current_remainder) {
       while (!qfi_end(&l_qfi) && l_qfi.current_remainder == l_remainder && l_qfi.run == l_quotient) {
-        if (l_qfi.current_memento >= l_remainder) {
+        if (l_qfi.current_memento >= l_memento) {
           return 1;
         }
         qfi_next(&l_qfi);
@@ -3148,12 +3174,12 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   QFi r_qfi;
   qf_iterator_from_position(qf, &r_qfi, r_quotient);
   if (r_quotient == r_qfi.run) {
-    while (!qfi_end(&r_qfi) && r_qfi.run == r_quotient && r_qfi.current_remainder <= r_remainder) {
+    while (!qfi_end(&r_qfi) && r_qfi.run == r_quotient && r_qfi.current_remainder < r_remainder) {
       qfi_next(&r_qfi);
     }
   }
   if (r_qfi.run == r_quotient && r_remainder == r_qfi.current_remainder) {
-    if (r_qfi.current_memento <= r_remainder) {
+    if (r_qfi.current_memento <= r_memento) {
       return 1;
     }
   }
