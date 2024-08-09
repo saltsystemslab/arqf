@@ -102,6 +102,7 @@ inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
 
     for (uint64_t i=0; i<nkeys; i++) {
       if (qf_point_query(qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 0) {
+        printf("Point query %lld failed!\n", i);
         abort();
       }
     }
@@ -146,7 +147,7 @@ inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
 #endif
 }
 
-uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
+static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
 {
   const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
   const uint64_t memento_mask =  (1ULL << memento_bits) - 1;
