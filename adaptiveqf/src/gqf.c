@@ -3168,34 +3168,32 @@ int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
   return 0;
 }
 
-static inline uint64_t lower_bound_fingerprint_index(const QF *qf, const uint64_t remainder, const uint64_t run_start_index) {
-  uint64_t current_idx = run_start_index;
-  uint64_t current_remainder = GET_REMAINDER(qf, current_idx); 
+static inline uint64_t lower_bound_fingerprint(const QF *qf, const uint64_t remainder, uint64_t *current_idx) {
+  uint64_t current_remainder = GET_REMAINDER(qf, *current_idx); 
   while (current_remainder < remainder) {
-    if (is_keepsake_or_quotient_runend(qf, current_idx)) {
+    if (is_keepsake_or_quotient_runend(qf, *current_idx)) {
       // If the current idx is the end of this keepsake box (contains only one item),
       // increment and continue.
-      current_idx++;
+      (*current_idx)++;
     }
     else {
       // Use bitselectv to find next runend.
-      uint64_t current_block = (current_idx / QF_SLOTS_PER_BLOCK);
-      uint64_t next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], current_idx, 0);
+      uint64_t current_block = ((*current_idx) / QF_SLOTS_PER_BLOCK);
+      uint64_t next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], *current_idx, 0);
       while (next_runend_offset == 64) {
         current_block++;
 	      next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], 0, 0);
       }
-      current_idx = current_block * QF_SLOTS_PER_BLOCK + next_runend_offset + 1; 
+      *current_idx = current_block * QF_SLOTS_PER_BLOCK + next_runend_offset + 1; 
     }
 
-    if (is_runend(qf, current_idx-1)) {
-      // We have exhausted all remainders.
-      break;
+    if (is_runend(qf, *current_idx-1)) {
+      return current_remainder;
     }
-    current_remainder = GET_REMAINDER(qf, current_idx);
+    current_remainder = GET_REMAINDER(qf, *current_idx);
   }
   // current_idx should be set to first remainder >= remainder, or after the runend.
-  return current_idx;
+  return current_remainder;
 }
 
 static inline uint64_t lower_bound_memento(const QF *qf, const uint64_t memento, const uint64_t runstart_index) {
@@ -3246,13 +3244,10 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
   if (!is_occupied(qf, hash_quotient)) {
     return 0;
   }
-	uint64_t runstart_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
-  if (runstart_index < hash_quotient) runstart_index = hash_quotient;
-  uint64_t runend_index = run_end(qf, hash_quotient);
-
-  uint64_t current_index = lower_bound_fingerprint_index(qf, hash_remainder, runstart_index); 
-  uint64_t current_remainder = GET_REMAINDER(qf, current_index);
-  if (current_index > runend_index || current_remainder > hash_remainder) return 0;
+	uint64_t current_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
+  if (current_index < hash_quotient) current_index = hash_quotient;
+  uint64_t nearest_remainder = lower_bound_fingerprint(qf, hash_remainder, &current_index); 
+  if (nearest_remainder != hash_remainder) return 0;
 
   uint64_t nearest_memento = lower_bound_memento(qf, hash_memento, current_index); 
   if (nearest_memento == hash_memento) 
@@ -3291,14 +3286,11 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   const uint64_t r_memento = r_hash & BITMASK(qf->metadata->value_bits);
 
   if (is_occupied(qf, l_quotient)) {
-    uint64_t runstart_index = l_quotient == 0 ? 0 : run_end(qf, l_quotient - 1) + 1;
-    if (runstart_index < l_quotient)
-      runstart_index = l_quotient;
-    uint64_t runend_index = run_end(qf, l_quotient);
+    uint64_t current_index = l_quotient == 0 ? 0 : run_end(qf, l_quotient - 1) + 1;
+    if (current_index < l_quotient) current_index = l_quotient;
+    uint64_t nearest_remainder = lower_bound_fingerprint(qf, l_remainder, &current_index);
 
-    uint64_t current_index = lower_bound_fingerprint_index(qf, l_remainder, runstart_index);
-    uint64_t current_remainder = GET_REMAINDER(qf, current_index);
-    if (current_index > runend_index || current_remainder > l_remainder) {
+    if (nearest_remainder != l_remainder) {
       // Remainder not found.
       if (l_quotient == r_quotient && l_remainder == r_remainder) {
         // We can exit early if both the hashes belong to the same keepsake box.
@@ -3320,14 +3312,11 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   }
 
   if (is_occupied(qf, r_quotient)) {
-    uint64_t runstart_index = r_quotient == 0 ? 0 : run_end(qf, r_quotient - 1) + 1;
-    if (runstart_index < r_quotient)
-      runstart_index = r_quotient;
-    uint64_t runend_index = run_end(qf, r_quotient);
-
-    uint64_t current_index = lower_bound_fingerprint_index(qf, r_remainder, runstart_index);
-    uint64_t current_remainder = GET_REMAINDER(qf, current_index);
-    if (current_index > runend_index || current_remainder > r_remainder)
+    uint64_t current_index = r_quotient == 0 ? 0 : run_end(qf, r_quotient - 1) + 1;
+    if (current_index < r_quotient)
+      current_index = r_quotient;
+    uint64_t nearest_remainder = lower_bound_fingerprint(qf, r_remainder, &current_index);
+    if (nearest_remainder != r_remainder)
       return 0;
 
     // Checking first memento is enough.
