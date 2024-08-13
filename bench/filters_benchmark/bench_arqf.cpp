@@ -210,12 +210,18 @@ inline QF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args.
      * This function is faster than std::sort and exploits the fact that the size of the maximum hash is bounded
      * via hybrid radix sort.
      */
+#if ARQF_BULK_LOAD
     boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
     int retcode = qf_bulk_load(qf, &key_hashes[0], key_hashes.size());
     if (retcode < 0) {
       std::cerr << "Failed to initialize iterator" << std::endl;
       abort();
     }
+#else
+    for (auto key_hash: key_hashes) {
+      qf_insert_memento(qf, key_hash, QF_KEY_IS_HASH);
+    }
+#endif
 
     stop_timer(build_time);
 

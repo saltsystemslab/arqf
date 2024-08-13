@@ -379,6 +379,8 @@ extern "C" {
   int qf_insert_mementos(QF *qf, uint64_t key, uint64_t mementos[], uint64_t memento_count,
       uint8_t flags);
 
+  int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags);
+
    //TODO(chesetti): Implement qf_point_query
   /*  Checks the memento filter for the existence of the point corresponding
    *  to the prefix key and the memento. Returns 0 if the query results in a

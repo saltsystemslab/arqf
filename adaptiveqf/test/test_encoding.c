@@ -1,5 +1,6 @@
 #include "gqf.h"
 #include "gqf_int.h"
+#include "include/splinter_util.h"
 #include <assert.h>
 
 #define SEED 1
@@ -7,9 +8,111 @@
 #define BITMASK(nbits) \
   ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
 
+#define MAX_KEY_SIZE 16
+#define MAX_VAL_SIZE 16
+
 const uint64_t nslots = 200;
 const uint64_t key_bits = 13;
 const uint64_t memento_bits = 4; // bits_per_slot should be 9 now.
+
+void test_point_insert_in_order()
+{
+  QF qf;
+  qf_malloc(&qf, nslots, key_bits, memento_bits, QF_HASH_NONE, SEED);
+
+  uint64_t nkeys = 0;
+  uint64_t sorted_hashes[255];
+
+  // Insert at end
+  for (uint64_t i = 0; i < 32; i++) {
+     qf_insert_memento(&qf, i, QF_KEY_IS_HASH);
+     nkeys++;
+  }
+
+  QFi qfi;
+  qf_iterator_from_position(&qf, &qfi, 0);
+  uint64_t idx = 0;
+  uint64_t hash = 0;
+  while (!qfi_end(&qfi)) {
+    qfi_get_memento_hash(&qfi, &hash);
+    assert(hash == idx);
+    qfi_next(&qfi);
+    idx++;
+  }
+  assert(idx == nkeys);
+
+  for (uint64_t i = 0; i < nkeys; i++) {
+    assert(qf_point_query(&qf, sorted_hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
+  }
+  qf_free(&qf);
+}
+
+void test_point_insert_reverse_order()
+{
+  QF qf;
+  qf_malloc(&qf, nslots, key_bits, memento_bits, QF_HASH_NONE, SEED);
+
+  uint64_t nkeys = 0;
+  uint64_t sorted_hashes[255];
+
+  // Insert at end
+  for (int64_t i = 31; i >= 0 ; i--) {
+     qf_insert_memento(&qf, i, QF_KEY_IS_HASH);
+     nkeys++;
+  }
+
+  QFi qfi;
+  qf_iterator_from_position(&qf, &qfi, 0);
+  uint64_t idx = 0;
+  uint64_t hash = 0;
+  while (!qfi_end(&qfi)) {
+    qfi_get_memento_hash(&qfi, &hash);
+    assert(hash == idx);
+    qfi_next(&qfi);
+    idx++;
+  }
+  assert(idx == nkeys);
+
+  for (uint64_t i = 0; i < nkeys; i++) {
+    assert(qf_point_query(&qf, sorted_hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
+  }
+  qf_free(&qf);
+}
+
+void test_point_insert_across_quotients()
+{
+  QF qf;
+  qf_malloc(&qf, nslots, key_bits, memento_bits, QF_HASH_NONE, SEED);
+
+  uint64_t nkeys = 0;
+  uint64_t sorted_hashes[255];
+
+  // Insert at end
+  for (int64_t i = 31; i >= 0 ; i--) {
+     qf_insert_memento(&qf, i, QF_KEY_IS_HASH);
+     qf_insert_memento(&qf, i | (1ULL << 9), QF_KEY_IS_HASH);
+     sorted_hashes[i] = i;
+     sorted_hashes[(i+32)] = i | (1ULL << 9);
+  }
+  nkeys = 32 * 2;
+
+  QFi qfi;
+  qf_iterator_from_position(&qf, &qfi, 0);
+  uint64_t idx = 0;
+  uint64_t hash = 0;
+  while (!qfi_end(&qfi)) {
+    qfi_get_memento_hash(&qfi, &hash);
+    assert(hash == sorted_hashes[idx]);
+    qfi_next(&qfi);
+    idx++;
+  }
+  assert(idx == nkeys);
+
+  for (uint64_t i = 0; i < nkeys; i++) {
+    assert(qf_point_query(&qf, sorted_hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
+  }
+  qf_free(&qf);
+}
 
 void test_bulk_load() {
   QF qf;
@@ -45,8 +148,46 @@ void test_bulk_load() {
   qf_free(&qf);
 }
 
+void test_splinter_ops() {
+	data_config db_data_cfg = qf_data_config_init();
+	splinterdb_config splinterdb_cfg = qf_splinterdb_config_init("db", &db_data_cfg);
+	remove(splinterdb_cfg.filename);
+	splinterdb *db;
+	if (splinterdb_create(&splinterdb_cfg, &db)) {
+    abort();
+	}
+
+  uint64_t key = 102;
+  uint64_t val = 1010;
+  db_insert(db, &key, sizeof(key), &val, sizeof(val), 0, 0);
+
+  val = 1023;
+  db_insert(db, &key, sizeof(key), &val, sizeof(val), 1, 0);
+
+  val = 201023;
+  db_insert(db, &key, sizeof(key), &val, sizeof(val), 1, 0);
+
+	splinterdb_lookup_result db_result;
+	splinterdb_lookup_result_init(db, &db_result, 0, NULL);
+
+	char buffer[10 * MAX_VAL_SIZE];
+	slice db_query = padded_slice(&key, MAX_KEY_SIZE, sizeof(key), buffer, 0);
+	splinterdb_lookup(db, db_query, &db_result);
+	slice result_val;
+	splinterdb_lookup_result_value(&db_result, &result_val);
+  uint64_t *value1_from_db = slice_data(result_val);
+  printf("%lld\n", result_val.length);
+  printf("%lld\n", *value1_from_db);
+
+	splinterdb_close(&db);
+}
+
 
 int main()
 {
   test_bulk_load();
+  test_point_insert_in_order();
+  test_point_insert_reverse_order();
+  test_point_insert_across_quotients();
+  test_splinter_ops();
 }
