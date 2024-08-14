@@ -26,6 +26,7 @@
 
 #include "../bench_template.hpp"
 #include "gqf.h"
+#include "arqf.h"
 #include "gqf_int.h"
 
 /**
@@ -161,7 +162,7 @@ static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quoti
 }
 
 template <typename t_itr, typename... Args>
-inline QF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args... args)
+inline ARQF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args... args)
 {
     auto&& t = std::forward_as_tuple(args...);
     auto queries_temp = std::get<0>(t);
@@ -190,29 +191,25 @@ inline QF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args.
     key_size += fingerprint_size;
     std::cerr << "key_size="<< key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
 
-    QF *qf = (QF *) malloc(sizeof(QF));
-    qf_malloc(qf, n_slots, key_size, memento_bits, QF_HASH_DEFAULT, seed);
+    ARQF *arqf = (ARQF *) malloc(sizeof(ARQF));
+    arqf_init_with_rhm(arqf, n_slots, key_size, memento_bits, seed, "db");
     // qf_set_auto_resize(qf, true);
 
     start_timer(build_time);
 
     auto key_hashes = std::vector<uint64_t>(n_items);
-    const uint64_t address_size = key_size - fingerprint_size;
-    const uint64_t address_mask = (1ULL << address_size) - 1;
-    const uint64_t memento_mask = (1ULL << memento_bits) - 1;
-    const uint64_t hash_mask = (1ULL << key_size) - 1;
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-      return memento_hash(x, n_slots, address_size, fingerprint_size, memento_bits, seed);
+      return arqf_hash(arqf, x);
     });
 
+#if ARQF_BULK_LOAD
     /*
      * The following code uses the Boost library to sort the elements in a single thread, via spreadsort function.
      * This function is faster than std::sort and exploits the fact that the size of the maximum hash is bounded
      * via hybrid radix sort.
      */
-#if ARQF_BULK_LOAD
     boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
-    int retcode = qf_bulk_load(qf, &key_hashes[0], key_hashes.size());
+    int retcode = arqf_bulk_load(arqf, &key_hashes[0], &(*begin), key_hashes.size());
     if (retcode < 0) {
       std::cerr << "Failed to initialize iterator" << std::endl;
       abort();
@@ -222,32 +219,30 @@ inline QF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args.
       qf_insert_memento(qf, key_hash, QF_KEY_IS_HASH);
     }
 #endif
-
     stop_timer(build_time);
-
-    check_iteration_validity(qf, &key_hashes[0], key_hashes.size());
-
-    return qf;
+    check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
+    return arqf;
 }
 
 template <typename value_type>
-inline bool query_arqf(QF *qf, const value_type left, const value_type right)
+inline bool query_arqf(ARQF *arqf, const value_type left, const value_type right)
 {
+    QF *qf = arqf->qf;
     uint64_t l_hash = memento_hash(left, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
     uint64_t r_hash = memento_hash(right, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
 
     int result;
     if (left == right) {
-      result = qf_point_query(qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+      result = qf_point_query(arqf->qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
     } else {
-      result = qf_range_query(qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+      result = qf_range_query(arqf->qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
     }
     return result;
 }
 
-inline size_t size_arqf(QF *f)
+inline size_t size_arqf(ARQF *f)
 {
-  return qf_get_total_size_in_bytes(f);
+  return qf_get_total_size_in_bytes(f->qf);
 }
 
 int main(int argc, char const *argv[])

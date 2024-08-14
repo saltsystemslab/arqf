@@ -21,11 +21,12 @@ void test_point_insert_in_order()
   qf_malloc(&qf, nslots, key_bits, memento_bits, QF_HASH_NONE, SEED);
 
   uint64_t nkeys = 0;
-  uint64_t sorted_hashes[255];
+  uint64_t hashes[255];
 
   // Insert at end
   for (uint64_t i = 0; i < 32; i++) {
      qf_insert_memento(&qf, i, QF_KEY_IS_HASH);
+     hashes[i] = i;
      nkeys++;
   }
 
@@ -42,7 +43,7 @@ void test_point_insert_in_order()
   assert(idx == nkeys);
 
   for (uint64_t i = 0; i < nkeys; i++) {
-    assert(qf_point_query(&qf, sorted_hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
+    assert(qf_point_query(&qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
   }
   qf_free(&qf);
 }
@@ -53,12 +54,13 @@ void test_point_insert_reverse_order()
   qf_malloc(&qf, nslots, key_bits, memento_bits, QF_HASH_NONE, SEED);
 
   uint64_t nkeys = 0;
-  uint64_t sorted_hashes[255];
+  uint64_t hashes[255];
 
   // Insert at end
   for (int64_t i = 31; i >= 0 ; i--) {
-     qf_insert_memento(&qf, i, QF_KEY_IS_HASH);
-     nkeys++;
+      hashes[i] = i;
+      qf_insert_memento(&qf, i, QF_KEY_IS_HASH);
+      nkeys++;
   }
 
   QFi qfi;
@@ -74,7 +76,7 @@ void test_point_insert_reverse_order()
   assert(idx == nkeys);
 
   for (uint64_t i = 0; i < nkeys; i++) {
-    assert(qf_point_query(&qf, sorted_hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
+    assert(qf_point_query(&qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 1);
   }
   qf_free(&qf);
 }
@@ -159,10 +161,10 @@ void test_splinter_ops() {
 
   uint64_t key = 102;
   uint64_t val = 1010;
-  db_insert(db, &key, sizeof(key), &val, sizeof(val), 0, 0);
+  db_insert(db, &key, sizeof(key), &val, sizeof(val), 1, 0);
 
   val = 1023;
-  db_insert(db, &key, sizeof(key), &val, sizeof(val), 1, 0);
+  db_insert(db, &key, sizeof(key), &val, sizeof(val), 0, 0);
 
   val = 201023;
   db_insert(db, &key, sizeof(key), &val, sizeof(val), 1, 0);

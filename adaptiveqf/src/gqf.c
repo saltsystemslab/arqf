@@ -3170,7 +3170,7 @@ int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
   return 0;
 }
 
-static inline uint64_t lower_bound_fingerprint(const QF *qf, const uint64_t remainder, uint64_t *current_idx) {
+static inline uint64_t lower_bound_remainder(const QF *qf, const uint64_t remainder, uint64_t *current_idx) {
   uint64_t current_remainder = GET_REMAINDER(qf, *current_idx); 
   while (current_remainder < remainder) {
     if (is_keepsake_or_quotient_runend(qf, *current_idx)) {
@@ -3197,6 +3197,11 @@ static inline uint64_t lower_bound_fingerprint(const QF *qf, const uint64_t rema
   // current_idx should be set to first remainder >= remainder, or after the runend.
   return current_remainder;
 }
+
+static inline uint64_t find_matching_extension(const QF *qf, const uint64_t hash, uint64_t *current_idx) {
+  return 0;
+}
+
 
 static inline uint64_t lower_bound_memento(const QF *qf, const uint64_t memento, const uint64_t runstart_index) {
   // Here runstart_index is start of keepsake box.
@@ -3248,7 +3253,7 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
   }
 	uint64_t current_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
   if (current_index < hash_quotient) current_index = hash_quotient;
-  uint64_t nearest_remainder = lower_bound_fingerprint(qf, hash_remainder, &current_index); 
+  uint64_t nearest_remainder = lower_bound_remainder(qf, hash_remainder, &current_index); 
   if (nearest_remainder != hash_remainder) return 0;
 
   uint64_t nearest_memento = lower_bound_memento(qf, hash_memento, current_index); 
@@ -3290,7 +3295,7 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   if (is_occupied(qf, l_quotient)) {
     uint64_t current_index = l_quotient == 0 ? 0 : run_end(qf, l_quotient - 1) + 1;
     if (current_index < l_quotient) current_index = l_quotient;
-    uint64_t nearest_remainder = lower_bound_fingerprint(qf, l_remainder, &current_index);
+    uint64_t nearest_remainder = lower_bound_remainder(qf, l_remainder, &current_index);
 
     if (nearest_remainder != l_remainder) {
       // Remainder not found.
@@ -3317,7 +3322,7 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
     uint64_t current_index = r_quotient == 0 ? 0 : run_end(qf, r_quotient - 1) + 1;
     if (current_index < r_quotient)
       current_index = r_quotient;
-    uint64_t nearest_remainder = lower_bound_fingerprint(qf, r_remainder, &current_index);
+    uint64_t nearest_remainder = lower_bound_remainder(qf, r_remainder, &current_index);
     if (nearest_remainder != r_remainder)
       return 0;
 
@@ -3421,7 +3426,7 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   // If it doesn't insert a new slot.
 	uint64_t target_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
   if (target_index < hash_quotient) target_index = hash_quotient;
-  uint64_t nearest_remainder = lower_bound_fingerprint(qf, hash_remainder, &target_index); 
+  uint64_t nearest_remainder = lower_bound_remainder(qf, hash_remainder, &target_index); 
 
   if (nearest_remainder == hash_remainder) {
     // Keepsake box exists. Rewrite it.
