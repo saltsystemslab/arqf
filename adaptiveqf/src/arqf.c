@@ -25,10 +25,12 @@ uint64_t arqf_hash(ARQF* arqf, uint64_t x)
   const uint64_t memento_mask = (1ULL << memento_bits) - 1;
   const uint64_t hash_mask = (1ULL << (quotient_bits + remainder_bits)) - 1;
   auto y = x >> memento_bits;
-  uint64_t mhash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
+  uint64_t mhash = MurmurHash64A(((void*)&y), sizeof(y), seed);
+  // Use the lower order q bits of mhash to determine address.
   const uint64_t address = fast_reduce((mhash & quotient_mask) << (32 - quotient_bits),
       n_slots);
-  uint64_t hash = (mhash >> quotient_bits) | (address << remainder_bits);
+  // Use the lower order r (after q bits) of mhash to determine reminder.
+  uint64_t hash = ((mhash & hash_mask) >> quotient_bits) | (address << remainder_bits);
   hash = (hash << memento_bits) | (x & memento_mask);
   // Fill the higher order bits with bits from the MurmurHash, these will be used as extensions.
   hash = hash | (mhash & ~BITMASK(quotient_bits + remainder_bits + memento_bits));
@@ -74,41 +76,39 @@ int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t
 }
 
 int arqf_adapt(ARQF *arqf, uint64_t fp_key, int flags) {
-#if 0
-  uint64_t fp_hash = fp_key;
+  uint64_t fp_hash = fp_key; // fp is false-positive.
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    fp_hash = arqf_hash(arqf, fp_key);
-  }
-  const uint64_t quotient_bits = arqf->qf->metadata->quotient_bits;
-  const uint64_t remainder_bits = arqf->qf->metadata->key_remainder_bits;
-  const uint64_t memento_bits = arqf->qf->metadata->value_bits;
-  const uint64_t n_slots = arqf->qf->metadata->nslots;
-  const uint64_t seed = arqf->qf->metadata->seed;
-
-  uint64_t fp_fingerprint = (fp_hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
-  uint64_t fp_remainder = (fp_hash & BITMASK(remainder_bits));
-  uint64_t fp_quotient = (fp_hash >> remainder_bits);
-
-  // Now go to fp_fingerprint, and see how many times this level was adapted.
-  if (!is_occupied(fp_quotient)) {
-    return 0; // Should not have happened, unless called on not a fp.
+    fp_hash = arqf_hash(arqf->qf, fp_key);
   }
 
-	uint64_t current_index = fp_quotient == 0 ? 0 : run_end(arqf->qf, fp_quotient-1) + 1;
-  if (current_index < fp_quotient) current_index = fp_quotient;
-  uint64_t nearest_remainder = lower_bound_remainder(arqf->qf, fp_remainder, &current_index); 
-  if (nearest_remainder != fp_remainder) {
-    return 0; // Again should not have happened, unless called on not a fp.
+
+  // Find the colliding fingerprint which caused fp
+  uint64_t colliding_fingerprint;
+  uint64_t collision_index;
+  int ret = find_colliding_fingerprint(arqf->qf, fp_hash, &colliding_fingerprint, &collision_index);
+  if (ret < 0) {
+    return ret;
   }
-  // Ok, now is the tricky part.
-  // 1. Get all keys with fingerprint qr, we don't need to rewrite this (we always query for qr).
-  // 2. Insert those keys.
-  //    3. Find out how many extensions you need?  (For now assume 1)
-  //    4. Get starting and ending slot.
-  //    5. Insert the keys in again. 
-  //    6. Add new slots if necessary.
-  //  Optimization: Store only prefix in rhm. Query DB for actual keys - reduces storage space.
-  //  Do we always extend for all remainders?
-#endif
+
+  // Lookup the reverse hashmap and find all keys mapped to this fingerprint.
+	char buffer[MAX_KEY_SIZE];
+	slice db_query = padded_slice(&colliding_fingerprint, MAX_KEY_SIZE, sizeof(colliding_fingerprint), buffer, 0);
+	splinterdb_lookup(arqf->rhm, db_query, arqf->db_result);
+	slice result_val;
+	splinterdb_lookup_result_value(arqf->db_result, &result_val);
+
+  // Extend the keepsake.
+  uint64_t keepsake_start_index = collision_index;
+  uint64_t keepsake_slots_written = 0; 
+  for (uint64_t i=0; i < result_val.length; i += MAX_VAL_SIZE) {
+    uint64_t key; // TODO(chesetti): Read this key.
+    uint64_t new_fingerprint;
+    uint64_t memento;
+    _overwrite_keepsake(arqf->qf, new_fingerprint, memento, keepsake_start_index, &keepsake_slots_written); // Implement overwrite keepsake.
+    // TODO(chesetti): Insert new fingerprints into the RHM.
+  }
+  // TODO(chesetti): Delete old fingerprint.
+  
+
   return 0;
 }
