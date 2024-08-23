@@ -98,17 +98,8 @@ int arqf_adapt(ARQF *arqf, uint64_t fp_key, int flags) {
     // The next minimal fingerprint extends it by value_bits (the memento size).
     // subsequent bits extend it by slot size (key_remainder + memento)
     uint8_t num_fingerprint_bits = arqf->qf->metadata->quotient_bits+ arqf->qf->metadata->key_remainder_bits + arqf->qf->metadata->value_bits;
-    printf("\n%016llx\n%016llx\n%016llx\n", fingerprint_bits, fp_fingerprint_bits, BITMASK(num_fingerprint_bits));
-    printf("%016llx\n", fingerprint_bits ^ fp_fingerprint_bits);
-    printf("%016llx\n", (fingerprint_bits ^ fp_fingerprint_bits) & BITMASK(num_fingerprint_bits));
-    printf("\n");
     while ( ((fingerprint_bits ^ fp_fingerprint_bits) & BITMASK(num_fingerprint_bits)) == 0) {
-      printf("Inside\n");
-      printf("%016llx\n%016llx\n%016llx\n", fingerprint_bits, fp_fingerprint_bits, BITMASK(num_fingerprint_bits));
       num_fingerprint_bits += arqf->qf->metadata->bits_per_slot;
-    printf("%016llx\n", fingerprint_bits ^ fp_fingerprint_bits);
-    printf("%016llx\n", (fingerprint_bits ^ fp_fingerprint_bits) & BITMASK(num_fingerprint_bits));
-    printf("\n");
     }
 #if DEBUG
     fprintf(stderr, "Extending %016llx to %016llx\n", colliding_fingerprint, fingerprint_bits & BITMASK(num_fingerprint_bits));
@@ -119,9 +110,5 @@ int arqf_adapt(ARQF *arqf, uint64_t fp_key, int flags) {
     db_insert(arqf->rhm, &new_fingerprint, sizeof(new_fingerprint), &key, sizeof(key), 1, 0);
   }
   splinterdb_delete(arqf->rhm, db_query);
-  printf("runends: %016llx\n", arqf->qf->blocks[0].runends[0]);
-  printf("extenss: %016llx\n", arqf->qf->blocks[0].extensions[0]);
-  
-
   return 0;
 }

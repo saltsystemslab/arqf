@@ -112,7 +112,6 @@ extern "C" {
 		using malloc/free to obtain and release the memory for the CQF. 
 	************************************/
 	
-  // TODO(chesetti): Update qf_malloc for range queries.
 	/* Initialize the CQF and allocate memory for the CQF. */
 	bool qf_malloc(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t
 								 value_bits, enum qf_hashmode hash, uint32_t seed);
@@ -259,7 +258,7 @@ extern "C" {
 #define QF_INVALID (-4)
 #define QFI_INVALID (-5)
 	
-  // TODO(chesetti): Update qf iterator.
+  // TODO(chesetti): Update qf iterator to read extensions.
 	/* Initialize an iterator starting at the given position.
 	 * Return value:
 	 *  >= 0: iterator is initialized and positioned at the returned slot.
@@ -358,6 +357,8 @@ extern "C" {
   /* Memento refers to the suffix of the key */
   /* We use the same API as the memento range filter to reuse test infra */
 
+  uint64_t arqf_hash(QF* qf, uint64_t x);
+
     /* Bulk load a set of keys into the filter. The list `sorted_hashes` must 
      * be a list of key hashes sorted in increasing order of (1) their slot
      * addresses, (2) fingerprints, and (3) mementos. That is, the highest
@@ -366,10 +367,9 @@ extern "C" {
      * bits, the mementos.
      * returns 0 if load was succesful, otherwise QF_INVALID.
      */
-  uint64_t arqf_hash(QF* qf, uint64_t x);
 	int qf_bulk_load(QF *qf, uint64_t *sorted_hashes, uint64_t n);
 
-   //TODO(chesetti): Implement qf_insert_mementos
+   //TODO(chesetti): Implement qf_insert_mementos to take into account adaptivity.
   /* Increment the counter for this key/value pair by count. 
    * Return value:
    *    >= 0: distance from the home slot to the slot in which the key is
@@ -382,7 +382,7 @@ extern "C" {
 
   int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags);
 
-   //TODO(chesetti): Implement qf_point_query
+   //TODO(chesetti): Implement qf_point_query to take into account adaptivity.
   /*  Checks the memento filter for the existence of the point corresponding
    *  to the prefix key and the memento. Returns 0 if the query results in a
    *  negative. Returns 1 if the result is a positive, but rejuvenation is
@@ -391,7 +391,7 @@ extern "C" {
    * May return QF_COULDNT_LOCK if called with QF_TRY_LOCK.  */
   int qf_point_query(const QF* qf, uint64_t key, uint8_t flags);
 
-   //TODO(chesetti): Implement qf_range_query
+   //TODO(chesetti): Implement qf_point_query to take into account adaptivity.
   /*  Checks the memento filter for the existence of any point in the range
    *  denoted by the left and right prefix keys and mementos. Returns 0 if
    *  the query results in a negative. Returns 1 if the result is a positive,
@@ -400,6 +400,7 @@ extern "C" {
    * May return QF_COULDNT_LOCK if called with QF_TRY_LOCK.  */
   int qf_range_query(const QF *qf, uint64_t l_key, uint64_t r_key, uint8_t flags);
 
+  // Internal helper functions used to search/adapt. TODO(chesetti): Update documentation.
   int find_colliding_fingerprint(
       const QF* qf, 
       uint64_t fp_hash, 

@@ -128,26 +128,27 @@ extern "C" {
 
 	// The below struct is used to instrument the code.
 	// It is not used in normal operations of the CQF.
-	typedef struct {
-		uint64_t start_index;
-		uint16_t length;
-	} cluster_data;
+  typedef struct {
+    uint64_t start_index;
+    uint16_t length;
+  } cluster_data;
 
-	typedef struct quotient_filter_iterator {
-		const QF *qf;
-		uint64_t run; // current quotient
+  // TODO(Chesetti): Update for adaptivity.
+  typedef struct quotient_filter_iterator {
+    const QF* qf;
+    uint64_t run;               // current quotient
     uint64_t current_remainder; // current remainder
-    uint64_t current_memento; // current memento
+    uint64_t current_memento;   // current memento
 
-		uint64_t current; // current slot
+    uint64_t current;           // current slot
     uint64_t intra_slot_offset; // starting bit of current memento in current slot
-    uint64_t num_extensions; 
+    uint64_t num_extensions;
 
-		uint64_t cur_start_index; // start of current quotient run(?)
-		uint16_t cur_length;
-		uint32_t num_clusters;
-		cluster_data *c_info;
-	} quotient_filter_iterator;
+    uint64_t cur_start_index; // start of current quotient run(?)
+    uint16_t cur_length;
+    uint32_t num_clusters;
+    cluster_data* c_info;
+  } quotient_filter_iterator;
 
 #ifdef __cplusplus
 }

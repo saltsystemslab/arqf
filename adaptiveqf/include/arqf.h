@@ -17,9 +17,9 @@ extern "C" {
   typedef adaptive_range_quotient_filter ARQF;
 
   struct adaptive_range_quotient_filter {
-    QF *qf;
-	  splinterdb *rhm;
-	  splinterdb_lookup_result *db_result;
+    QF* qf;
+    splinterdb* rhm;
+    splinterdb_lookup_result* db_result;
   };
 
   /* Initialize and allocate memory for AQF and the reverse hash map. 
@@ -34,6 +34,7 @@ extern "C" {
    * But I haven't figured out how to call the boost sort method from C (it might be easy, it might be hard, just haven't tried it out)
    * So I use the arqf_hash to compute the hashes and sort them outside. 
    * The keys DO not have to be sorted. We compute the hash again when inserting into the RHM (Again, not the most ideal).. 
+   * TODO(chesetti): Revisit bulk load API.
    *  */
   int arqf_bulk_load(ARQF *arqf, uint64_t *sorted_hashes, uint64_t *keys, uint64_t nkeys, int flags);
   int arqf_adapt(ARQF *arqf, uint64_t fp_key, int flags);
