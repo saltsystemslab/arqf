@@ -26,7 +26,7 @@ extern "C" {
    * Will allocate the required bytes using malloc.
    * A SplinterDB instance will be created at the passed path to be used as a reverse hash map.
    **/
-  int arqf_init_with_rhm(ARQF* arqf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed, const char* rhm_path);
+  int arqf_init_with_rhm(ARQF* arqf, splinterdb *db, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed);
 
   /*
    * Bulk load the RHM and filter with the keys and hashes.
@@ -35,10 +35,8 @@ extern "C" {
    * So I use the arqf_hash to compute the hashes and sort them outside. 
    * The keys DO not have to be sorted. We compute the hash again when inserting into the RHM (Again, not the most ideal).. 
    *  */
-  int arqf_bulk_load(ARQF *arqf, uint64_t *sorted_hashes, uint64_t *keys, uint64_t nkeys);
-	int arqf_insert_key(ARQF *arqf, uint64_t key, int flags);
-
-  uint64_t arqf_hash(ARQF *arqf, uint64_t key);
+  int arqf_bulk_load(ARQF *arqf, uint64_t *sorted_hashes, uint64_t *keys, uint64_t nkeys, int flags);
+  int arqf_adapt(ARQF *arqf, uint64_t fp_key, int flags);
 
 #ifdef __cplusplus
 }

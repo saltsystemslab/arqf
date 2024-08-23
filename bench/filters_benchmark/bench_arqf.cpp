@@ -199,7 +199,7 @@ inline ARQF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Arg
 
     auto key_hashes = std::vector<uint64_t>(n_items);
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-      return arqf_hash(arqf, x);
+      return arqf_hash(arqf->qf, x);
     });
 
 #if ARQF_BULK_LOAD

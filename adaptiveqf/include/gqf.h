@@ -366,6 +366,7 @@ extern "C" {
      * bits, the mementos.
      * returns 0 if load was succesful, otherwise QF_INVALID.
      */
+  uint64_t arqf_hash(QF* qf, uint64_t x);
 	int qf_bulk_load(QF *qf, uint64_t *sorted_hashes, uint64_t n);
 
    //TODO(chesetti): Implement qf_insert_mementos
@@ -399,9 +400,15 @@ extern "C" {
    * May return QF_COULDNT_LOCK if called with QF_TRY_LOCK.  */
   int qf_range_query(const QF *qf, uint64_t l_key, uint64_t r_key, uint8_t flags);
 
-  int find_colliding_fingerprint(const QF* qf, uint64_t fp_hash, uint64_t *fp, uint64_t *index);
+  int find_colliding_fingerprint(
+      const QF* qf, 
+      uint64_t fp_hash, 
+      uint64_t *fp, 
+      uint64_t *start_index, 
+      uint64_t *num_ext_bits,
+      uint64_t *end_index);
 
-  int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint64_t memento, uint64_t start_index, uint64_t *num_valid_slots);
+  int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_extension_bits, uint64_t memento, uint64_t start_index, uint64_t *last_overwritten_index, uint64_t *keepsake_runend);
 
 
 #ifdef __cplusplus

@@ -1,4 +1,5 @@
 #include "gqf.h"
+#include "arqf.h"
 #include "gqf_int.h"
 #include "include/splinter_util.h"
 #include <assert.h>
@@ -184,6 +185,38 @@ void test_splinter_ops() {
 	splinterdb_close(&db);
 }
 
+void test_adaptivity() {
+  splinterdb* db;
+  data_config data_cfg = qf_data_config_init();
+  splinterdb_config splinterdb_cfg = qf_splinterdb_config_init("rhm", &data_cfg);
+  remove(splinterdb_cfg.filename);
+  if (splinterdb_create(&splinterdb_cfg, &db)) {
+    return -1;
+  }
+
+  ARQF arqf;
+  arqf_init_with_rhm(&arqf, db, 256, 16, 4, 0);
+  qf_dump_metadata(arqf.qf);
+
+  uint64_t sorted_hashes[3] = {0xA01011, 0xA01012, 0xB01012};
+  arqf_bulk_load(&arqf, sorted_hashes, sorted_hashes, 3, QF_KEY_IS_HASH);
+
+  assert(qf_point_query(arqf.qf, 0x01011, QF_KEY_IS_HASH)==1);
+  assert(qf_point_query(arqf.qf, 0x01012, QF_KEY_IS_HASH)==1);
+
+  arqf_adapt(&arqf, 0x01011, QF_KEY_IS_HASH);
+
+  assert(qf_point_query(arqf.qf, 0x01011, QF_KEY_IS_HASH)==0);
+  assert(qf_point_query(arqf.qf, 0x01012, QF_KEY_IS_HASH)==0);
+  assert(qf_point_query(arqf.qf, 0xAAA01011, QF_KEY_IS_HASH)==1);
+  assert(qf_point_query(arqf.qf, 0xAAA01012, QF_KEY_IS_HASH)==1);
+
+  arqf_adapt(&arqf, 0xAAA01011, QF_KEY_IS_HASH);
+
+  assert(qf_point_query(arqf.qf, 0xAAA01011, QF_KEY_IS_HASH)==0);
+  assert(qf_point_query(arqf.qf, 0xAAA01012, QF_KEY_IS_HASH)==0);
+}
+
 
 int main()
 {
@@ -192,4 +225,5 @@ int main()
   test_point_insert_reverse_order();
   test_point_insert_across_quotients();
   test_splinter_ops();
+  test_adaptivity();
 }
