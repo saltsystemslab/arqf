@@ -1,1 +1,0 @@
-/usr/bin/c++  -march=native -O3 -DNDEBUG CMakeFiles/bench_grafite.dir/filters_benchmark/bench_grafite.cpp.o -o bench_grafite 

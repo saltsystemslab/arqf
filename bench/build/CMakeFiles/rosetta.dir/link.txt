@@ -1,2 +1,0 @@
-/usr/bin/ar qc librosetta.a CMakeFiles/rosetta.dir/filters/Rosetta/dst.cpp.o CMakeFiles/rosetta.dir/filters/Rosetta/MurmurHash3.cpp.o
-/usr/bin/ranlib librosetta.a
