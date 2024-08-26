@@ -369,7 +369,6 @@ extern "C" {
      */
 	int qf_bulk_load(QF *qf, uint64_t *sorted_hashes, uint64_t n);
 
-   //TODO(chesetti): Implement qf_insert_mementos to take into account adaptivity.
   /* Increment the counter for this key/value pair by count. 
    * Return value:
    *    >= 0: distance from the home slot to the slot in which the key is
@@ -382,7 +381,6 @@ extern "C" {
 
   int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags);
 
-   //TODO(chesetti): Implement qf_point_query to take into account adaptivity.
   /*  Checks the memento filter for the existence of the point corresponding
    *  to the prefix key and the memento. Returns 0 if the query results in a
    *  negative. Returns 1 if the result is a positive, but rejuvenation is
@@ -400,15 +398,28 @@ extern "C" {
    * May return QF_COULDNT_LOCK if called with QF_TRY_LOCK.  */
   int qf_range_query(const QF *qf, uint64_t l_key, uint64_t r_key, uint8_t flags);
 
-  // Internal helper functions used to search/adapt. TODO(chesetti): Update documentation.
+  // Internal helper functions used to search/adapt.
+  // Given a fp_hash (with memento_bits), find the colliding fingerprint.
+  // If colliding fingerprint exists, fp, start_index, num_ext_bits and keepsake_end_index will be set to correct values.
+  // If colliding fingerprint does not exist, but remainder does - 
+  //  1. Then *fp, *start_index will be set to position of first remainder greater than or equal to hash remainder. 
+  //  num_ext_bits will be set to number of extension bits in this remainder. 
+  //  // TODO(chesetti): Set to first fingerprint greater than or equal to hash fingerprint.
+  //  2. If all fingerprints are lesser than the hash remainder, then fp will be set to the last remainder, 
+  //    and *start_index will be positioned at the first position after the keepsake.
+  // If quotient does not exist, return -1 and num_ext_bits will be set to -1.
   int find_colliding_fingerprint(
       const QF* qf, 
-      uint64_t fp_hash, 
-      uint64_t *fp, 
+      uint64_t hash, 
+      uint64_t *colliding_fingerprint, 
       uint64_t *start_index, 
       uint64_t *num_ext_bits,
-      uint64_t *end_index);
+      uint64_t *keepsake_end_index);
 
+  // Internal helper function to insert keepsake and mementos into the qf
+  // Assumes that [start_index, last_overwritten_index] is valid and what has been reconstructed so far. 
+  // If start_index exceeds *keepsake_runend, then shift slots to make space.
+  // Makes sure that offsets and quotient runends are valid before and after calling this function.
   int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_extension_bits, uint64_t memento, uint64_t start_index, uint64_t *last_overwritten_index, uint64_t *keepsake_runend);
 
 

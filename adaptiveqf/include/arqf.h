@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-	typedef struct adaptive_range_quotient_filter adaptive_range_quotient_filter;
+  typedef struct adaptive_range_quotient_filter adaptive_range_quotient_filter;
   typedef adaptive_range_quotient_filter ARQF;
 
   struct adaptive_range_quotient_filter {
