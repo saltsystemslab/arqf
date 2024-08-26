@@ -202,7 +202,9 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
 
     auto key_hashes = std::vector<uint64_t>(n_items);
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-      return arqf_hash(qf, x);
+      uint64_t hash = arqf_hash(qf, x);
+      uint64_t mask  = 1ULL << (qf->metadata->quotient_bits + qf->metadata->bits_per_slot);
+      return hash & (mask - 1);
     });
 
 #if 0 

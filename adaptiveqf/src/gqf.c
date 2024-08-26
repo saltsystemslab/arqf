@@ -3018,7 +3018,7 @@ uint64_t arqf_hash(QF* qf, uint64_t x)
   // WARNING: Don't use auto here. For some reason, using auto y, results in sizeof(y)=4
   // TODO(chesetti): Find out why this is the case.
   uint64_t y = x >> memento_bits;
-  uint64_t mhash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
+  uint64_t mhash = MurmurHash64A(((void*)&y), sizeof(y), seed);
   // Use the lower order q bits of mhash to determine address.
   const uint64_t address = fast_reduce((mhash & quotient_mask) << (32 - quotient_bits),
       n_slots);
@@ -3448,7 +3448,7 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
   num_ext_bits -= qf->metadata->quotient_bits;
   uint64_t fingerprint_ext_bits = fingerprint & BITMASK(num_ext_bits);
 
-  while (current_index < *last_overwritten_index) {
+  while (current_index <= *last_overwritten_index) {
     uint64_t num_ext_bits_from_slot;
     uint64_t cur_qf_extension = read_extension_bits(qf, current_index, &num_ext_bits_from_slot);
     if (cur_qf_extension == fingerprint_ext_bits) {
@@ -3469,13 +3469,14 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
 
   if (!extension_found) {
 #if DEBUG
-   fprintf(stdout, "Inserting extenstion at %lld\n", current_index);
+   // fprintf(stdout, "Inserting extenstion at %lld\n", current_index);
 #endif
     uint64_t value = fingerprint_remainder;
     value |= (fingerprint_ext_bits << qf->metadata->key_remainder_bits);
-    value |= (memento << (num_fingerprint_bits + qf->metadata->key_remainder_bits));
+    value |= (memento << (num_ext_bits + qf->metadata->key_remainder_bits));
     int num_bits = num_ext_bits + qf->metadata->bits_per_slot; // bits_per_slot = remainder + memento.
     if (num_bits > 64) {
+      perror("Too many extensions\n");
       abort(); // TODO(chesetti): TOO MANY EXTENSIONS!
     }
     _add_to_end_of_keepsake_run(qf, fingerprint_quotient, value, current_index, 0, num_bits, last_overwritten_index, old_keespake_runend);
@@ -3816,7 +3817,7 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   uint64_t num_ext_bits = 0;
   uint64_t keepsake_runend_index;
   int ret = find_colliding_fingerprint(qf, hash, &colliding_fingerprint, &target_index, &num_ext_bits, &keepsake_runend_index);
-  uint64_t limit_index = keepsake_runend_index+1;
+  uint64_t limit_index = keepsake_runend_index;
   if (ret == 0) { 
     // Keepsake exists. num_ext_bits, runend_index will be set to keepsake
       uint64_t old_memento = (get_slot(qf, target_index) >> qf->metadata->key_remainder_bits);

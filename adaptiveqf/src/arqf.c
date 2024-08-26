@@ -67,11 +67,11 @@ int arqf_adapt(ARQF *arqf, uint64_t fp_key, int flags) {
   int ret = find_colliding_fingerprint(
       arqf->qf, fp_hash, &colliding_fingerprint, &collision_index, &num_ext_bits, &collision_runend_index);
 #if DEBUG
-  fprintf(stderr, "Colliding with %016llx, occupying [%lld\n %lld\n]", colliding_fingerprint, collision_index, collision_runend_index);
+  fprintf(stderr, "Colliding with %016llx due to %016llx, occupying [%lld %lld]\n", fp_hash, colliding_fingerprint, collision_index, collision_runend_index);
 #endif
   if (ret < 0) {
     return ret;
-  }
+  } 
   uint64_t fp_fingerprint_bits = fp_hash >> arqf->qf->metadata->value_bits;
   // Lookup the reverse hashmap and find all keys mapped to this fingerprint.
 	char buffer[MAX_KEY_SIZE];
@@ -85,27 +85,57 @@ int arqf_adapt(ARQF *arqf, uint64_t fp_key, int flags) {
 
   // Extend the keepsake.
   uint64_t keepsake_start_index = collision_index;
-  uint64_t last_overwritten_index= 0; 
+  uint64_t last_overwritten_index= collision_index-1; 
   for (uint64_t i=0; i < result_val.length; i += MAX_VAL_SIZE) {
     uint64_t key = *(uint64_t *)(slice_data(result_val) + i);
-    uint64_t memento = key & BITMASK(arqf->qf->metadata->value_bits);
-    uint64_t fingerprint_bits = key >> arqf->qf->metadata->value_bits;
+    uint64_t hash = key;
+    if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
+      hash = arqf_hash(arqf->qf, key);
+    }
+#if DEBUG
+  fprintf(stderr, "%llu %llu\n", key, fp_key);
+  fprintf(stderr, "Actual KeyHash %016llx\n", hash);
+  fprintf(stderr, "FP KeyHash %016llx\n", fp_hash);
+#endif
+    uint64_t memento = hash & BITMASK(arqf->qf->metadata->value_bits);
+    uint64_t fingerprint_bits = hash >> arqf->qf->metadata->value_bits;
     // First extension is memento sized.
     // Intial Fingerprint (without adapting) uses qf->metadata->quotient_bits + qf->metadata->key_remainder_bits.
     // The next minimal fingerprint extends it by value_bits (the memento size).
     // subsequent bits extend it by slot size (key_remainder + memento)
     uint8_t num_fingerprint_bits = arqf->qf->metadata->quotient_bits+ arqf->qf->metadata->key_remainder_bits + arqf->qf->metadata->value_bits;
-    while ( ((fingerprint_bits ^ fp_fingerprint_bits) & BITMASK(num_fingerprint_bits)) == 0) {
+    while ((fingerprint_bits & BITMASK(num_fingerprint_bits)) == (fp_fingerprint_bits & BITMASK(num_fingerprint_bits))) {
       num_fingerprint_bits += arqf->qf->metadata->bits_per_slot;
     }
+
+
 #if DEBUG
     fprintf(stderr, "Extending %016llx to %016llx\n", colliding_fingerprint, fingerprint_bits & BITMASK(num_fingerprint_bits));
+    printf("Overwriting keepsake: %llu %llu %llu\n", keepsake_start_index, last_overwritten_index, collision_runend_index);
 #endif
     _overwrite_keepsake(arqf->qf, fingerprint_bits, num_fingerprint_bits, memento, keepsake_start_index, &last_overwritten_index, &collision_runend_index);
     // Insert new fingerprints into the RHM.
     uint64_t new_fingerprint = fingerprint_bits & BITMASK(num_fingerprint_bits);
     db_insert(arqf->rhm, &new_fingerprint, sizeof(new_fingerprint), &key, sizeof(key), 1, 0);
   }
+
+  // Check if new fingerprints and fp_key do not collide with arqf anymore.
+  for (uint64_t i=0; i < result_val.length; i += MAX_VAL_SIZE) {
+    uint64_t key = *(uint64_t *)(slice_data(result_val) + i);
+    printf("Checking %llu\n", key);
+    if (qf_point_query(arqf->qf, key, 0) == 0) {
+      printf("Key got lost\n");
+      abort();
+    }
+  }
+  if (qf_point_query(arqf->qf, fp_key, 0) == 1) {
+    printf("Checking %llu\n", fp_key);
+      printf("Key not adapted\n");
+      abort();
+  }
+
+
+
   splinterdb_delete(arqf->rhm, db_query);
   return 0;
 }

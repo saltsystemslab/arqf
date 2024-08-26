@@ -183,7 +183,8 @@ inline bool query_arqf(ARQF *arqf, const value_type left, const value_type right
 template <typename value_type>
 inline void adapt_arqf(ARQF *arqf, const value_type left, const value_type right)
 {
-  std::cout<<"Adapting"<<std::endl;
+  arqf_adapt(arqf, left, 0);
+  arqf_adapt(arqf, right, 0);
 }
 
 inline size_t size_arqf(ARQF *f)
@@ -208,7 +209,7 @@ int main(int argc, char const *argv[])
 
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
 
-    experiment(pass_fun(init_arqf), pass_ref(query_arqf), 
+    experiment_adaptivity(pass_fun(init_arqf), pass_ref(query_arqf), pass_ref(adapt_arqf),
                 pass_ref(size_arqf), arg, keys, queries, queries);
 
     print_test();
