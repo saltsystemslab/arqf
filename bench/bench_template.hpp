@@ -79,6 +79,46 @@ void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double p
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
+template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename key_type, typename... Args>
+void experiment_adaptivity(InitFun init_f, RangeFun range_f, AdaptFun adapt_f, SizeFun size_f, const double param, InputKeys<key_type> &keys, Workload<key_type> &queries, Args... args)
+{
+    auto f = init_f(keys.begin(), keys.end(), param, args...);
+
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+    auto fp = 0, fn = 0;
+    start_timer(query_time);
+    for (auto q : queries)
+    {
+        const auto [left, right, original_result] = q;
+
+        bool query_result = range_f(f, left, right);
+        if (query_result && !original_result) {
+            adapt_f(f, left, right);
+            query_result = range_f(f, left, right);
+            if (!query_result) {
+              std::cerr << "[!] alert, adapting failed!" << std::endl;
+            }
+            fp++;
+        }
+        else if (!query_result && original_result)
+        {
+            std::cerr << "[!] alert, found false negative!" << std::endl;
+            fn++;
+        }
+    }
+    stop_timer(query_time);
+
+    auto size = size_f(f);
+    test_out.add_measure("size", size);
+    test_out.add_measure("bpk", TO_BPK(size, keys.size()));
+    test_out.add_measure("fpr", ((double)fp / queries.size()));
+    test_out.add_measure("false_neg", fn);
+    test_out.add_measure("n_keys", keys.size());
+    test_out.add_measure("n_queries", queries.size());
+    test_out.add_measure("false_positives", fp);
+    std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+}
+
 argparse::ArgumentParser init_parser(const std::string &name)
 {
     argparse::ArgumentParser parser(name);

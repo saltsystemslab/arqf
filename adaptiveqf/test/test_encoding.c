@@ -184,7 +184,6 @@ void test_splinter_ops() {
 
 	splinterdb_close(&db);
 }
-
 void test_adaptivity() {
   splinterdb* db;
   data_config data_cfg = qf_data_config_init();
@@ -217,6 +216,14 @@ void test_adaptivity() {
   assert(qf_point_query(arqf.qf, 0xAAA01012, QF_KEY_IS_HASH)==0);
 }
 
+void test_splinterdb_init() {
+  splinterdb* db;
+  data_config *data_cfg;
+  splinterdb_config *splinterdb_cfg;
+
+  qf_init_splinterdb(&db, &data_cfg, &splinterdb_cfg, "test_db2");
+  
+}
 
 int main()
 {
@@ -226,4 +233,5 @@ int main()
   test_point_insert_across_quotients();
   test_splinter_ops();
   test_adaptivity();
+  test_splinterdb_init();
 }

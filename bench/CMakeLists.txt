@@ -3,6 +3,9 @@ project(rangefilters-bench)
 
 option(ALL_RENCODER "compile all REncoder implementation (SE/SS)" ON)
 
+set(SPLINTERDB_PATH ../adaptiveqf/external/splinterdb/build/release/lib)
+get_filename_component(SPLINTERDB_FULL_PATH ${SPLINTERDB_PATH} ABSOLUTE)
+
 # TODO(chesetti): Check if CMakeLists.txt can be organized better.
 
 # fetch latest argparse
@@ -17,7 +20,7 @@ FetchContent_MakeAvailable(argparse)
 set(CMAKE_CXX_STANDARD 17)
 
 list(APPEND SUCCINCT_LIBS "sux" "sdsl-lite")
-list(APPEND Targets "memento" "bucketing" "grafite" "surf" "rosetta" "proteus" "snarf" "rencoder" "arqf")
+list(APPEND Targets "memento" "bucketing" "grafite" "surf" "rosetta" "proteus" "snarf" "rencoder" "arqf" "adaptive_arqf")
 list(APPEND x86Targets "surf" "rosetta" "proteus" "rencoder")
 
 set(CMAKE_CXX_STANDARD 17)
@@ -68,9 +71,14 @@ function(compile_bench ds)
         else ()
             # target_compile_definitions(bench_memento INTERFACE -DUSE_LIBRARY_STL)
         endif ()
-    elseif (ds MATCHES "arqf")
+    elseif (ds MATCHES "^arqf$")
+      message("Compiling ${ds}")
       target_link_libraries(bench_arqf arqflib)
       target_compile_definitions(bench_arqf PRIVATE -DARQF_BULK_LOAD=1)
+    elseif (ds MATCHES "^adaptive_arqf$")
+      message("Compiling ${ds}")
+      target_link_libraries(bench_adaptive_arqf arqflib) 
+      target_compile_options(bench_adaptive_arqf INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
     elseif (ds MATCHES "grafite")
         add_library(grafitelib INTERFACE)
         if ("sux" IN_LIST SUCCINCT_LIBS)

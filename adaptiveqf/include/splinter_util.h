@@ -21,11 +21,20 @@
 #define MAX_KEY_SIZE 16
 #define MAX_VAL_SIZE 16
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int merge_tuples(const data_config *cfg, slice key, message old_message, merge_accumulator *new_message);
 int merge_tuples_final(const data_config *cfg, slice key, merge_accumulator *oldest_message);
 
-data_config qf_data_config_init();
-splinterdb_config qf_splinterdb_config_init(char *db_path, data_config *data_cfg);
+// data_config qf_data_config_init();
+// splinterdb_config qf_splinterdb_config_init(char *db_path, data_config *data_cfg);
+
+void qf_init_splinterdb(splinterdb **db, data_config **data_cfg, splinterdb_config **splinter_cfg, char *db_path);
+void qf_data_config_init(data_config *data_cfg);
+void qf_splinterdb_config_init(splinterdb_config *splinter_cfg, char *db_path, data_config *data_cfg);
+void qf_splinterdb_init(splinterdb *db);
 
 void pad_data(void *dest, const void *src, const size_t dest_len, const size_t src_len, const int flagged);
 slice padded_slice(const void *data, const size_t dest_len, const size_t src_len, void *buffer, const int flagged);
@@ -33,5 +42,9 @@ int db_insert(splinterdb *database, const void *key_data, const size_t key_len, 
 
 int qf_splinter_insert(QF *qf, splinterdb *db, uint64_t key, int count);
 int qf_splinter_insert_split(QF *qf, splinterdb *db, splinterdb *bm, uint64_t key, uint64_t val);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

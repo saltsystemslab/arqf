@@ -3015,8 +3015,10 @@ uint64_t arqf_hash(QF* qf, uint64_t x)
   const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
   const uint64_t memento_mask = (1ULL << memento_bits) - 1;
   const uint64_t hash_mask = (1ULL << (quotient_bits + remainder_bits)) - 1;
-  auto y = x >> memento_bits;
-  uint64_t mhash = MurmurHash64A(((void*)&y), sizeof(y), seed);
+  // WARNING: Don't use auto here. For some reason, using auto y, results in sizeof(y)=4
+  // TODO(chesetti): Find out why this is the case.
+  uint64_t y = x >> memento_bits;
+  uint64_t mhash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
   // Use the lower order q bits of mhash to determine address.
   const uint64_t address = fast_reduce((mhash & quotient_mask) << (32 - quotient_bits),
       n_slots);
@@ -3228,6 +3230,7 @@ static inline uint64_t lower_bound_remainder(const QF *qf, const uint64_t remain
     current_remainder = GET_REMAINDER(qf, *current_idx);
   }
   // current_idx should be set to first remainder >= remainder, or after the runend.
+  // current_remainder will be set to first remainder >= remainder or the last remainder.
   return current_remainder;
 }
 
@@ -3292,7 +3295,7 @@ int find_colliding_fingerprint(
     uint64_t* colliding_fingerprint,
     uint64_t* start_index,
     uint64_t* num_ext_bits,
-    uint64_t* runend_index)
+    uint64_t* keepsake_runend_index)
 {
   // Remove the memento bits.
   fp_hash >>= qf->metadata->value_bits;
@@ -3305,6 +3308,7 @@ int find_colliding_fingerprint(
   const uint64_t fp_ext_bits = (fp_hash >> (quotient_bits + remainder_bits));
 
   if (!is_occupied(qf, fp_quotient)) {
+    *num_ext_bits = -1; // Quoitent/Remainder does not exist.
     return -1;
   }
   *start_index = fp_quotient == 0 ? 0 : run_end(qf, fp_quotient - 1) + 1;
@@ -3312,6 +3316,8 @@ int find_colliding_fingerprint(
     *start_index = fp_quotient;
   uint64_t colliding_remainder = lower_bound_remainder(qf, fp_remainder, start_index);
   if(colliding_remainder != fp_remainder) {
+    *colliding_fingerprint = colliding_remainder;
+    *num_ext_bits = -1; // Quoitent/Remainder does not exist.
     return -1;
   }
 
@@ -3329,10 +3335,10 @@ int find_colliding_fingerprint(
       next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], 0, 0);
     }
     *start_index = current_block * QF_SLOTS_PER_BLOCK + next_runend_offset; 
-    if (is_runend(qf, *start_index)) {
+    (*start_index)++;
+    if (is_runend(qf, *start_index-1)) {
       return -1;
     }
-    (*start_index)++;
     if (GET_REMAINDER(qf, *start_index) != fp_remainder) {
       return -1;
     }
@@ -3342,16 +3348,16 @@ int find_colliding_fingerprint(
   *colliding_fingerprint = fp_hash & BITMASK(quotient_bits + remainder_bits);
   *colliding_fingerprint |= (colliding_extension_bits << (quotient_bits + remainder_bits));
 #if DEBUG
-  fprintf(stderr, "%016llx hash collided with fingerprint %016llx \n", fp_hash, *colliding_fingerprint);
+  // fprintf(stderr, "%016llx hash collided with fingerprint %016llx \n", fp_hash, *colliding_fingerprint);
 #endif
-  *runend_index = *start_index;
-  uint64_t current_block = ((*runend_index) / QF_SLOTS_PER_BLOCK);
-  uint64_t next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], *runend_index, 0);
+  *keepsake_runend_index = *start_index;
+  uint64_t current_block = ((*keepsake_runend_index) / QF_SLOTS_PER_BLOCK);
+  uint64_t next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], *keepsake_runend_index, 0);
   while (next_runend_offset == 64) {
     current_block++;
     next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], 0, 0);
   }
-  *runend_index = current_block * QF_SLOTS_PER_BLOCK + next_runend_offset;
+  *keepsake_runend_index = current_block * QF_SLOTS_PER_BLOCK + next_runend_offset;
   return 0;
 }
 
@@ -3426,24 +3432,27 @@ static inline int _add_to_end_of_keepsake_run(
 }
 
 int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bits, uint64_t memento, uint64_t start_index, uint64_t *last_overwritten_index, uint64_t *old_keespake_runend) {
-  assert(num_fingerprint_bits >= qf->metadata->quotient_bits + qf->metadata->bits_per_slot);
+  // assert(num_fingerprint_bits >= qf->metadata->quotient_bits + qf->metadata->bits_per_slot);
+  int verbose = 0;
   int extension_found = 0;
   uint64_t current_index = start_index;
   uint64_t fingerprint_remainder = fingerprint & BITMASK(qf->metadata->key_remainder_bits);
+  uint8_t num_ext_bits = num_fingerprint_bits;
+  // ASSUMES REMAINDER EXISTS AT START_INDEX
   assert(GET_REMAINDER(qf, current_index) == fingerprint_remainder);
   fingerprint >>= qf->metadata->key_remainder_bits;
-  num_fingerprint_bits -= qf->metadata->key_remainder_bits;
+  num_ext_bits -= qf->metadata->key_remainder_bits;
 
   uint64_t fingerprint_quotient = fingerprint & BITMASK(qf->metadata->quotient_bits);
   fingerprint >>= qf->metadata->quotient_bits;
-  num_fingerprint_bits -= qf->metadata->quotient_bits;
-  uint64_t fingerprint_ext_bits = fingerprint & BITMASK(num_fingerprint_bits);
+  num_ext_bits -= qf->metadata->quotient_bits;
+  uint64_t fingerprint_ext_bits = fingerprint & BITMASK(num_ext_bits);
 
   while (current_index < *last_overwritten_index) {
-    uint64_t num_ext_bits;
-    uint64_t cur_qf_extension = read_extension_bits(qf, current_index, &num_ext_bits);
+    uint64_t num_ext_bits_from_slot;
+    uint64_t cur_qf_extension = read_extension_bits(qf, current_index, &num_ext_bits_from_slot);
     if (cur_qf_extension == fingerprint_ext_bits) {
-      assert(num_ext_bits == num_fingerprint_bits);
+      assert(num_ext_bits == num_ext_bits_from_slot);
       extension_found = 1;
       break;
     }
@@ -3460,35 +3469,42 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
 
   if (!extension_found) {
 #if DEBUG
-  fprintf(stderr, "Inserting extenstion at %lld\n", current_index);
+   fprintf(stdout, "Inserting extenstion at %lld\n", current_index);
 #endif
     uint64_t value = fingerprint_remainder;
     value |= (fingerprint_ext_bits << qf->metadata->key_remainder_bits);
     value |= (memento << (num_fingerprint_bits + qf->metadata->key_remainder_bits));
-    int num_bits = num_fingerprint_bits + qf->metadata->bits_per_slot; // bits_per_slot = remainder + memento.
+    int num_bits = num_ext_bits + qf->metadata->bits_per_slot; // bits_per_slot = remainder + memento.
     if (num_bits > 64) {
       abort(); // TODO(chesetti): TOO MANY EXTENSIONS!
     }
     _add_to_end_of_keepsake_run(qf, fingerprint_quotient, value, current_index, 0, num_bits, last_overwritten_index, old_keespake_runend);
-    num_fingerprint_bits -= qf->metadata->value_bits;
-		METADATA_WORD(qf, extensions, current_index) |= (1ULL << (current_index % QF_SLOTS_PER_BLOCK));
-    while (num_fingerprint_bits) {
-      current_index++;
+    if (num_ext_bits) {
+      num_ext_bits -= qf->metadata->value_bits;
 		  METADATA_WORD(qf, extensions, current_index) |= (1ULL << (current_index % QF_SLOTS_PER_BLOCK));
-      num_fingerprint_bits -= qf->metadata->bits_per_slot;
+      while (num_ext_bits) {
+        current_index++;
+		    METADATA_WORD(qf, extensions, current_index) |= (1ULL << (current_index % QF_SLOTS_PER_BLOCK));
+        num_ext_bits -= qf->metadata->bits_per_slot;
+      }
     }
     return 0;
   }
 
   // Extension exists. Walk through all mementos and insert in order.
-  num_fingerprint_bits -= qf->metadata->value_bits;
-  current_index++;
-  while (num_fingerprint_bits) {
+  uint64_t memento_offset; 
+  if (num_ext_bits) {
+    num_ext_bits -= qf->metadata->value_bits;
     current_index++;
-    num_fingerprint_bits -= qf->metadata->bits_per_slot;
+    while (num_ext_bits) {
+      current_index++;
+      num_fingerprint_bits -= qf->metadata->bits_per_slot;
+    }
+    memento_offset = 0; // extension end always aligns with slots.
+  } else {
+    memento_offset = qf->metadata->key_remainder_bits;
   }
 
-  uint64_t memento_offset = 0; // extensions end always aligns with slots.
   uint64_t current_slot = get_slot(qf, current_index) >> memento_offset;
   uint64_t current_memento = current_slot & BITMASK(qf->metadata->value_bits);
   while (true) {
@@ -3759,20 +3775,16 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   uint64_t hash_memento = hash & BITMASK(qf->metadata->value_bits);
   const uint64_t hash_remainder = (hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
   const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
-
+  const uint64_t fingerprint_bits = key >> qf->metadata->value_bits;
   uint64_t runstart_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
   if (runstart_index < hash_quotient) runstart_index = hash_quotient;
   uint64_t runend_index = run_end(qf, hash_quotient);
 
   if (!is_occupied(qf, hash_quotient) && runstart_index == hash_quotient) {
-    // printf(" Inserting a new quotient\n");
     uint64_t slot_value = hash_remainder | (hash_memento << qf->metadata->key_remainder_bits);
 		METADATA_WORD(qf, occupieds, hash_quotient) |= (1ULL << (hash_quotient % QF_SLOTS_PER_BLOCK));
 		METADATA_WORD(qf, runends, hash_quotient) |= (1ULL << (hash_quotient % QF_SLOTS_PER_BLOCK));
     set_slot(qf, hash_quotient, slot_value);
-    if (run_end(qf, hash_quotient) != runend_index) {
-      printf("%lld %lld\n", hash_quotient, runend_index);
-    }
     assert(run_end(qf, hash_quotient) == runend_index);
     return 0;
   }
@@ -3785,14 +3797,9 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     // Insert at runend_index+1;
     uint64_t slot_value = hash_remainder | (hash_memento << qf->metadata->key_remainder_bits);
     insert_one_slot(qf, hash_quotient, runend_index+1, slot_value);
-    // printf(" After inserting one slot\n");
-    // offset_lower_bound(qf, 33535207); 
 		METADATA_WORD(qf, occupieds, hash_quotient) |= (1ULL << (hash_quotient % 64));
 		METADATA_WORD(qf, runends, runend_index+1) |= (1ULL << ((runend_index + 1) % 64));
-
     assert(run_end(qf, hash_quotient) == runend_index+1);
-    // printf(" After updating bits \n");
-    // offset_lower_bound(qf, 33535207) ;
     return 0;
   }
 
@@ -3804,6 +3811,47 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   // If it doesn't insert a new slot.
 	uint64_t target_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
   if (target_index < hash_quotient) target_index = hash_quotient;
+
+  uint64_t colliding_fingerprint;
+  uint64_t num_ext_bits = 0;
+  uint64_t keepsake_runend_index;
+  int ret = find_colliding_fingerprint(qf, hash, &colliding_fingerprint, &target_index, &num_ext_bits, &keepsake_runend_index);
+  uint64_t limit_index = keepsake_runend_index+1;
+  if (ret == 0) { 
+    // Keepsake exists. num_ext_bits, runend_index will be set to keepsake
+      uint64_t old_memento = (get_slot(qf, target_index) >> qf->metadata->key_remainder_bits);
+      uint64_t old_remainder = (get_slot(qf, target_index) & BITMASK(qf->metadata->key_remainder_bits));
+    uint64_t num_fingerprint_bits = qf->metadata->quotient_bits + qf->metadata->key_remainder_bits + num_ext_bits;
+    _overwrite_keepsake(qf, fingerprint_bits, num_fingerprint_bits, hash_memento, target_index, &limit_index, &keepsake_runend_index);
+
+  } else if (num_ext_bits != -1) {
+    // The exact keepsake does not exist, but the remainder exists.
+    // So add the new keepsake.
+    uint64_t num_fingerprint_bits = qf->metadata->quotient_bits + qf->metadata->key_remainder_bits + num_ext_bits;
+    _overwrite_keepsake(qf, fingerprint_bits, num_fingerprint_bits, hash_memento, target_index, &limit_index, &keepsake_runend_index);
+  } else if (colliding_fingerprint > hash_remainder) {
+      // printf("Remainder does not exist middle %016llx\n", key);
+    // if remainder does not exist, will be either set to first remainder greater than hash_remainder
+    // printf(" adding new keepsake in between\n");
+    uint64_t slot_value = hash_remainder | (hash_memento << qf->metadata->key_remainder_bits);
+    insert_one_slot(qf, hash_quotient, target_index, slot_value);
+		METADATA_WORD(qf, runends, target_index) |= (1ULL << (target_index % 64));
+		METADATA_WORD(qf, extensions, target_index) |= (1ULL << (target_index % 64));
+      assert(run_end(qf, hash_quotient) == runend_index+1);
+  } else {
+      // printf("Remainder does not exist end %016llx\n", key);
+    // if no remainder is greater, then target_index will be set to end of current_runend + 1.
+    // printf(" adding new keepsake at end\n");
+    uint64_t current_runend = run_end(qf, hash_quotient);
+    assert(is_runend(qf, current_runend));
+    assert(target_index == current_runend+1);
+    uint64_t slot_value = hash_remainder | (hash_memento << qf->metadata->key_remainder_bits);
+    insert_one_slot(qf, hash_quotient, target_index, slot_value);
+		METADATA_WORD(qf, runends, target_index) |= (1ULL << (target_index % 64));
+		METADATA_WORD(qf, extensions, current_runend) |= (1ULL << (current_runend % 64));
+    assert(run_end(qf, hash_quotient) == runend_index+1);
+  } 
+#if 0
   uint64_t nearest_remainder = lower_bound_remainder(qf, hash_remainder, &target_index); 
 
   if (nearest_remainder == hash_remainder) {
@@ -3930,7 +3978,9 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     assert(target_index == current_runend+1);
     assert(run_end(qf, hash_quotient) == runend_index+1);
   }
+#endif
   return 0;
+
 }
 
 // use the bulk_insert_sort function to ensure sorted order (to be implemented)

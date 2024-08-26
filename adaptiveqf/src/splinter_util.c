@@ -1,4 +1,5 @@
 #include "include/splinter_util.h"
+#include <string.h>
 #include <assert.h>
 
 int merge_tuples(const data_config *cfg, slice key, message old_message, merge_accumulator *new_message) {
@@ -16,26 +17,18 @@ int merge_tuples_final(const data_config *cfg, slice key, merge_accumulator *old
 	return 0;
 }
 
-data_config qf_data_config_init() {
-	data_config data_cfg;
-	default_data_config_init(MAX_KEY_SIZE, &data_cfg);
-
-	data_cfg.merge_tuples = merge_tuples;
-	data_cfg.merge_tuples_final = merge_tuples_final;
-
-	return data_cfg;
+void qf_data_config_init(data_config *data_cfg) {
+	default_data_config_init(MAX_KEY_SIZE, data_cfg);
+	data_cfg->merge_tuples = merge_tuples;
+	data_cfg->merge_tuples_final = merge_tuples_final;
 }
 
-splinterdb_config qf_splinterdb_config_init(char *db_path, data_config *data_cfg) {
-	splinterdb_config splinterdb_cfg = (splinterdb_config){
-		.filename   = db_path,
-		.cache_size = 64 * Mega,
-		.disk_size  = 20 * Giga,
-		.data_cfg   = data_cfg,
-		.io_flags   = O_RDWR | O_CREAT | O_DIRECT
-	};
-	
-	return splinterdb_cfg;
+void qf_splinterdb_config_init(splinterdb_config *splinter_cfg, char *db_path, data_config *data_cfg) {
+    splinter_cfg->filename = db_path;
+    splinter_cfg->cache_size = 64 * Mega;
+    splinter_cfg->disk_size = 20 * Giga;
+    splinter_cfg->data_cfg = data_cfg;
+		splinter_cfg->io_flags= O_RDWR | O_CREAT | O_DIRECT;
 }
 
 void pad_data(void *dest, const void *src, const size_t dest_len, const size_t src_len, const int flagged) {
@@ -94,4 +87,16 @@ int qf_splinter_insert_split(QF *qf, splinterdb *db, splinterdb *bm, uint64_t ke
 		if (db_insert(bm, &result.minirun_id, sizeof(result.minirun_id), &key, sizeof(key), result.minirun_existed, 0)) return 0;
 		return result.minirun_existed + 1;
 	}
+}
+
+void qf_init_splinterdb(splinterdb **db, data_config **data_cfg, splinterdb_config **splinterdb_cfg, char *db_path) {
+    *data_cfg = (data_config *)malloc(sizeof(data_config));
+    *splinterdb_cfg = (splinterdb_config *)malloc(sizeof(splinterdb_config));
+    memset((*splinterdb_cfg), 0, sizeof(splinterdb_config));
+    qf_data_config_init(*data_cfg);
+    qf_splinterdb_config_init(*splinterdb_cfg, db_path, *data_cfg);
+
+    if (splinterdb_create(*splinterdb_cfg, db)) {
+      abort();
+    }
 }
