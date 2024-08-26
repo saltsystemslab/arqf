@@ -3345,13 +3345,10 @@ int find_colliding_fingerprint(
     }
     *start_index = current_block * QF_SLOTS_PER_BLOCK + next_runend_offset;
     (*start_index)++;
-    if (is_runend(qf, *start_index - 1)) {
-      *keepsake_runend_index = (*start_index - 1);
-      *start_index = keepsake_start;
-      *num_ext_bits = min_ext_bits; // If fp_hash was going to be inserted, you need atleast these many extension bits.
-      return -1;
-    }
-    if (GET_REMAINDER(qf, *start_index) != fp_remainder) {
+    // You cannot check for is_keepsake_or_quotient runend here.
+    // *start_index - 1 will always be a runend. We just need to check if we 
+    // have come out of the remainder.
+    if (is_runend(qf, *start_index - 1) || GET_REMAINDER(qf, *start_index) != fp_remainder) {
       *keepsake_runend_index = (*start_index - 1);
       *start_index = keepsake_start;
       *num_ext_bits = min_ext_bits; // If fp_hash was going to be inserted, you need atleast these many extension bits.
@@ -3621,20 +3618,6 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
     return 1;
   else 
     return 0;
-
-#if 0
-  int iter_result = 0;
-  QFi qfi;
-  qf_iterator_from_position(qf, &qfi, hash_quotient);
-  while (!_qfi_end(&qfi) && qfi.run == hash_quotient && qfi.current_remainder < hash_remainder) {
-      qfi_next_keepsake(&qfi);
-  }
-  while (!_qfi_end(&qfi) && qfi.run == hash_quotient && qfi.current_remainder == hash_remainder && qfi.current_memento < hash_memento) {
-    _qfi_next(&qfi);
-  }
-  if (!_qfi_end(&qfi) && qfi.run == hash_quotient && qfi.current_remainder == hash_remainder && qfi.current_memento == hash_memento)
-    iter_result = 1;
-#endif
 }
 
 int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) {
@@ -3682,32 +3665,6 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
     }
   }
 
-#if 0
-    uint64_t current_index = l_quotient == 0 ? 0 : run_end(qf, l_quotient - 1) + 1;
-    if (current_index < l_quotient) current_index = l_quotient;
-    uint64_t nearest_remainder = lower_bound_remainder(qf, l_remainder, &current_index);
-
-    if (nearest_remainder != l_remainder) {
-      // Remainder not found.
-      if (l_quotient == r_quotient && l_remainder == r_remainder) {
-        // We can exit early if both the hashes belong to the same keepsake box.
-        return 0;
-      }
-    }
-    else {
-      uint64_t nearest_memento = lower_bound_memento(qf, l_memento, current_index);
-      if (l_remainder == r_remainder && l_quotient == r_quotient) {
-        // We can exit early if both the hashes belong to the same keepsake box.
-        if (nearest_memento >= l_memento && nearest_memento <= r_memento)
-          return 1;
-        else
-          return 0;
-      } else if (nearest_memento >= l_memento) {
-        return 1;
-      }
-    }
-#endif
-
   if (is_occupied(qf, r_quotient)) {
     uint64_t colliding_fingerprint, current_index, num_ext_bits, runend_index; 
     int ret = find_colliding_fingerprint(qf, l_hash, &colliding_fingerprint, &current_index, &num_ext_bits, &runend_index);
@@ -3727,59 +3684,7 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
       else return 0;
     }
   }
-
-
-#if 0
-    uint64_t current_index = r_quotient == 0 ? 0 : run_end(qf, r_quotient - 1) + 1;
-    if (current_index < r_quotient)
-      current_index = r_quotient;
-    uint64_t nearest_remainder = lower_bound_remainder(qf, r_remainder, &current_index);
-    if (nearest_remainder != r_remainder)
-      return 0;
-
-    // Checking first memento is enough.
-    uint64_t nearest_memento = (get_slot(qf, current_index) >> qf->metadata->key_remainder_bits);
-    if (nearest_memento <= r_memento) 
-      return 1;
-    else 
-      return 0;
-  }
-#endif
   return 0;
-
-#if 0
-  QFi l_qfi;
-  qf_iterator_from_position(qf, &l_qfi, l_quotient);
-  if (l_quotient == l_qfi.run) {
-    while (!qfi_end(&l_qfi) && l_qfi.run == l_quotient && l_qfi.current_remainder < l_remainder) {
-      qfi_next(&l_qfi);
-    }
-    if (l_quotient == l_qfi.run && l_remainder == l_qfi.current_remainder) {
-      while (!qfi_end(&l_qfi) && l_qfi.current_remainder == l_remainder && l_qfi.run == l_quotient) {
-        if (l_qfi.current_memento >= l_memento) {
-          return 1;
-        }
-        qfi_next(&l_qfi);
-      }
-    }
-  }
-#endif
-  
-#if 0
-  // Check right prefix.
-  QFi r_qfi;
-  qf_iterator_from_position(qf, &r_qfi, r_quotient);
-  if (r_quotient == r_qfi.run) {
-    while (!qfi_end(&r_qfi) && r_qfi.run == r_quotient && r_qfi.current_remainder < r_remainder) {
-      qfi_next(&r_qfi);
-    }
-  }
-  if (r_qfi.run == r_quotient && r_remainder == r_qfi.current_remainder) {
-    if (r_qfi.current_memento <= r_memento) {
-      return 1;
-    }
-  }
-#endif
 }
 
 int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
