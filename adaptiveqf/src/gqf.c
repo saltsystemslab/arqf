@@ -3650,8 +3650,9 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
       uint64_t nearest_memento = lower_bound_memento(qf, l_memento, current_index, memento_offset);
       if (l_remainder == r_remainder && l_quotient == r_quotient) {
         // We can exit early if both the hashes belong to the same keepsake box.
-        if (nearest_memento >= l_memento && nearest_memento <= r_memento)
+        if (nearest_memento >= l_memento && nearest_memento <= r_memento) {
           return 1;
+        }
         else
           return 0;
       } else if (nearest_memento >= l_memento) {
@@ -3667,7 +3668,7 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
 
   if (is_occupied(qf, r_quotient)) {
     uint64_t colliding_fingerprint, current_index, num_ext_bits, runend_index; 
-    int ret = find_colliding_fingerprint(qf, l_hash, &colliding_fingerprint, &current_index, &num_ext_bits, &runend_index);
+    int ret = find_colliding_fingerprint(qf, r_hash, &colliding_fingerprint, &current_index, &num_ext_bits, &runend_index);
     if (ret == 0) {
       uint64_t memento_offset = qf->metadata->key_remainder_bits;
       if (num_ext_bits) {
