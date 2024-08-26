@@ -3320,6 +3320,7 @@ int find_colliding_fingerprint(
     *num_ext_bits = -1; // Quoitent/Remainder does not exist.
     return -1;
   }
+  const uint64_t keepsake_start = *start_index; // Needed if fingerprint does not exist, but remainder does.
 
   uint64_t min_ext_bits = 0; // If fp_hash was to be inserted, what is the minimum extension bits needed.
   uint64_t cur_qf_extension = 0;
@@ -3345,9 +3346,14 @@ int find_colliding_fingerprint(
     *start_index = current_block * QF_SLOTS_PER_BLOCK + next_runend_offset;
     (*start_index)++;
     if (is_runend(qf, *start_index - 1)) {
+      *keepsake_runend_index = (*start_index - 1);
+      *start_index = keepsake_start;
+      *num_ext_bits = min_ext_bits; // If fp_hash was going to be inserted, you need atleast these many extension bits.
       return -1;
     }
     if (GET_REMAINDER(qf, *start_index) != fp_remainder) {
+      *keepsake_runend_index = (*start_index - 1);
+      *start_index = keepsake_start;
       *num_ext_bits = min_ext_bits; // If fp_hash was going to be inserted, you need atleast these many extension bits.
       return -1;
     }

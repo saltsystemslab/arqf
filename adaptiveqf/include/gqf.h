@@ -402,9 +402,8 @@ extern "C" {
   // Given a fp_hash (with memento_bits), find the colliding fingerprint.
   // If colliding fingerprint exists, fp, start_index, num_ext_bits and keepsake_end_index will be set to correct values.
   // If colliding fingerprint does not exist, but remainder does - 
-  //  1. Then *fp, *start_index will be set to position of first remainder greater than or equal to hash remainder. 
-  //  num_ext_bits will be set to number of extension bits in this remainder. 
-  //  // TODO(chesetti): Set to first fingerprint greater than or equal to hash fingerprint.
+  //  1. Then *fp, *start_index will be set to position of first keepsake with this remainder. 
+  //  num_ext_bits will be set to number of extension bits needed if you were to insert this fingerprint. 
   //  2. If all fingerprints are lesser than the hash remainder, then fp will be set to the last remainder, 
   //    and *start_index will be positioned at the first position after the keepsake.
   // If quotient does not exist, return -1 and num_ext_bits will be set to -1.
