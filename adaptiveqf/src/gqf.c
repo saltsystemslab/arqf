@@ -3360,7 +3360,7 @@ int find_colliding_fingerprint(
   *colliding_fingerprint = fp_hash & BITMASK(quotient_bits + remainder_bits);
   *colliding_fingerprint |= (colliding_extension_bits << (quotient_bits + remainder_bits));
 #if DEBUG
-  // fprintf(stderr, "%016llx hash collided with fingerprint %016llx \n", fp_hash, *colliding_fingerprint);
+   // fprintf(stderr, "%016llx hash collided with fingerprint %016llx \n", fp_hash, *colliding_fingerprint);
 #endif
   *keepsake_runend_index = *start_index;
   uint64_t current_block = ((*keepsake_runend_index) / QF_SLOTS_PER_BLOCK);
@@ -3680,8 +3680,10 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
           current_index++;
         }
       }
-      uint64_t nearest_memento = (get_slot(qf, current_index) << memento_offset) & BITMASK(qf->metadata->value_bits);
-      if (nearest_memento <= r_memento) return 1;
+      uint64_t nearest_memento = (get_slot(qf, current_index) >> memento_offset) & BITMASK(qf->metadata->value_bits);
+      if (nearest_memento <= r_memento) {
+        return 1;
+      }
       else return 0;
     }
   }
