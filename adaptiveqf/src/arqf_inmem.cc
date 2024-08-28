@@ -49,7 +49,6 @@ int InMemArqf_bulk_load(InMemArqf* arqf, uint64_t *sorted_hashes, uint64_t *keys
 
 int InMemArqf_adapt(InMemArqf* arqf, uint64_t fp_key, int flags) {
   // Find the colliding fingerprint which caused fp
-#if 0
   uint64_t fp_hash = fp_key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
     fp_hash = arqf_hash(arqf->qf, fp_key);
@@ -66,7 +65,8 @@ int InMemArqf_adapt(InMemArqf* arqf, uint64_t fp_key, int flags) {
   uint64_t fp_fingerprint_bits = fp_hash >> arqf->qf->metadata->value_bits;
 
   std::vector<uint64_t> colliding_keys;
-  for (auto it = arqf->rhm.begin(colliding_fingerprint); it != arqf->rhm.end(colliding_fingerprint); it++) {
+  auto range = arqf->rhm.equal_range(colliding_fingerprint);
+  for (auto it = range.first; it != range.second; it++) {
     uint64_t key = it->second;
     colliding_keys.push_back(key);
   }
@@ -108,5 +108,4 @@ int InMemArqf_adapt(InMemArqf* arqf, uint64_t fp_key, int flags) {
   }
 #endif
   return 0;
-#endif
 }

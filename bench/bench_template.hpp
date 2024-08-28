@@ -96,7 +96,7 @@ void experiment_adaptivity(InitFun init_f, RangeFun range_f, AdaptFun adapt_f, S
             adapt_f(f, left, right);
             query_result = range_f(f, left, right);
             if (query_result) {
-              std::cerr << "[!] alert, adapting failed!" << std::endl;
+              std::cerr << "[!] alert, adapting " <<left<<" "<<right<<" failed!" << std::endl;
             }
             fp++;
         }

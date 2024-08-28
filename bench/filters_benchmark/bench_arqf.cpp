@@ -207,12 +207,13 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
       return hash & (mask - 1);
     });
 
-#if 0 
+#if ARQF_BULK_LOAD
     /*
      * The following code uses the Boost library to sort the elements in a single thread, via spreadsort function.
      * This function is faster than std::sort and exploits the fact that the size of the maximum hash is bounded
      * via hybrid radix sort.
      */
+    uint64_t nkeys  = key_hashes.size();
     boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
     int retcode = qf_bulk_load(qf, &key_hashes[0], key_hashes.size());
     if (retcode < 0) {
@@ -220,7 +221,6 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
       abort();
     }
 #else
-    uint64_t nkeys  = key_hashes.size();
     for (int i=0; i < nkeys; i++) {
       qf_insert_memento(qf, key_hashes[i], QF_KEY_IS_HASH);
     }
@@ -234,8 +234,8 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
 template <typename value_type>
 inline bool query_qf(QF *qf, const value_type left, const value_type right)
 {
-    uint64_t l_hash = memento_hash(left, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
-    uint64_t r_hash = memento_hash(right, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
+    uint64_t l_hash = arqf_hash(qf, left);
+    uint64_t r_hash = arqf_hash(qf, right);
 
     int result;
     if (left == right) {

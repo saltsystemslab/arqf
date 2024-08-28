@@ -168,8 +168,8 @@ template <typename value_type>
 inline bool query_arqf(ARQF *arqf, const value_type left, const value_type right)
 {
     QF *qf = arqf->qf;
-    uint64_t l_hash = memento_hash(left, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
-    uint64_t r_hash = memento_hash(right, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
+    uint64_t l_hash = arqf_hash(qf, left);
+    uint64_t r_hash = arqf_hash(qf, right);
 
     int result;
     if (left == right) {

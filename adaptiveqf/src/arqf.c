@@ -53,6 +53,10 @@ int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t
   return 0;
 }
 
+int arqf_adapt_range(ARQF *arqf, uint64_t l_key, uint64_t r_key, int flags) {
+  return 0;
+}
+
 int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags)
 {
   // Find the colliding fingerprint which caused fp
@@ -82,6 +86,7 @@ int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags)
   }
   slice result_val;
   splinterdb_lookup_result_value(arqf->db_result, &result_val);
+  splinterdb_delete(arqf->rhm, db_query); // Delete the old keys. They will be reinserted even if they map to same fingerprint.
 
   // Extend the keepsake.
   uint64_t keepsake_start_index = collision_index;
@@ -132,6 +137,5 @@ int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags)
     abort();
   }
 
-  splinterdb_delete(arqf->rhm, db_query);
   return 0;
 }

@@ -25,9 +25,8 @@ void qf_data_config_init(data_config *data_cfg) {
 
 void qf_splinterdb_config_init(splinterdb_config *splinter_cfg, char *db_path, data_config *data_cfg) {
     splinter_cfg->filename = db_path;
-    splinter_cfg->cache_size = 20 * Giga;
+    splinter_cfg->cache_size = 64 * Mega;
     splinter_cfg->disk_size = 20 * Giga;
-    splinter_cfg->memtable_size = 4 * Giga;
     splinter_cfg->data_cfg = data_cfg;
 		splinter_cfg->io_flags= O_RDWR | O_CREAT | O_DIRECT;
 }

@@ -40,6 +40,25 @@
  * This file contains the benchmark for Memento filter.
  */
 
+inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
+{
+  printf("Running sanity\n");
+    for (uint64_t i=0; i<nkeys; i++) {
+      if (qf_point_query(qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 0) {
+        printf("Point query %lld failed!\n", i);
+        abort();
+      }
+    }
+
+    for (uint64_t i=1; i<nkeys; i++) {
+      uint64_t k = (hashes[i] + hashes[i-1]) >> 1;
+      if (k == hashes[i] || k == hashes[i-1]) continue;
+      if (qf_point_query(qf, k, QF_KEY_IS_HASH | QF_NO_LOCK) == 1) {
+        abort();
+      }
+    }
+  printf("sanity passed\n");
+}
 
 inline uint64_t MurmurHash64A(const void * key, int len, unsigned int seed)
 {
@@ -141,12 +160,9 @@ inline InMemArqf *init_arqf(const t_itr begin, const t_itr end, const double bpk
 
     auto key_hashes = std::vector<uint64_t>(n_items);
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-        return x;
-#if 0
       uint64_t hash = arqf_hash(arqf->qf, x);
       uint64_t mask  = 1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot);
       return hash & (mask - 1);
-#endif
     });
     auto keys = std::vector<uint64_t>(n_items);
     std::transform(begin, end, keys.begin(), [&](auto x) {
@@ -173,8 +189,8 @@ template <typename value_type>
 inline bool query_arqf(InMemArqf *arqf, const value_type left, const value_type right)
 {
     QF *qf = arqf->qf;
-    uint64_t l_hash = memento_hash(left, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
-    uint64_t r_hash = memento_hash(right, qf->metadata->nslots, qf->metadata->quotient_bits, qf->metadata->key_remainder_bits, qf->metadata->value_bits, qf->metadata->seed);
+    uint64_t l_hash = arqf_hash(qf, left);
+    uint64_t r_hash = arqf_hash(qf, right);
 
     int result;
     if (left == right) {

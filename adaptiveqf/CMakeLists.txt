@@ -20,6 +20,7 @@ add_library(arqflib STATIC
   ./src/splinter_util.c
   ./src/hashutil.c
   ./src/arqf.c
+  ./src/arqf_inmem.cc
 )
 target_include_directories(arqflib PUBLIC . ./include ./external/splinterdb/include)
 # The order seems to matter here, aio and xxhash need to compe after SplinterDB.
