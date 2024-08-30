@@ -204,8 +204,11 @@ inline bool query_arqf(InMemArqf *arqf, const value_type left, const value_type 
 template <typename value_type>
 inline void adapt_arqf(InMemArqf *arqf, const value_type left, const value_type right)
 {
-  InMemArqf_adapt(arqf, left, 0);
-  InMemArqf_adapt(arqf, right, 0);
+  if (left == right) {
+    InMemArqf_adapt(arqf, left, 0);
+  } else {
+    InMemArqf_adapt_range(arqf, left, right, 0);
+  }
 }
 
 inline size_t size_arqf(InMemArqf *f)

@@ -3383,41 +3383,55 @@ static inline int _add_to_end_of_keepsake_run(
     uint64_t slot,
     int slot_offset,
     int num_bits,
+    int is_new_keepsake,
     uint64_t* last_written_slot,
-    uint64_t* old_keepsake_runend)
+    uint64_t* keepsake_runend)
 {
-
+#if DEBUG
   int keepsake_runend_is_quotient_runend = 0;
-  if (is_runend(qf, *old_keepsake_runend)) {
+  if (is_runend(qf, *keepsake_runend)) {
     keepsake_runend_is_quotient_runend = 1;
   }
+#endif
 
-  int num_available_slots = (*old_keepsake_runend - *last_written_slot);
+  int num_available_slots = (*keepsake_runend - *last_written_slot);
   if (num_available_slots < 0)
     num_available_slots = 0;
 
+  int num_slots_consumed = 0;
   while (num_bits) {
+    // First lets make space if needed.
     if (slot_offset == 0) {
       if (num_available_slots > 0) {
         if (slot <= *last_written_slot) {
+          // Inserting in middle of overwritten run.
           shift_remainders(qf, slot, *last_written_slot + 1);
           shift_runends(qf, slot, *last_written_slot, 1);
         }
         (*last_written_slot)++;
         num_available_slots--;
       } else {
-        if (slot == (*old_keepsake_runend) + 1) {
+        if (slot == (*keepsake_runend) + 1) {
+          // This should preserve the runend bits of keepsake_runend.
+          // We need valid runends so that that insert_one_slot works as intented.
           insert_one_slot(qf, quotient, slot - 1, 0);
           uint64_t last_slot_value = get_slot(qf, slot);
           set_slot(qf, slot - 1, last_slot_value);
           set_slot(qf, slot, 0);
+          if (is_new_keepsake & num_slots_consumed == 0) {
+            // If we are starting a new keepsake and this is its first slot, 
+            // we need to mark the previous slot as a keepsake end.
+            METADATA_WORD(qf, extensions, slot-1) |= (1ULL << ((slot-1) % QF_SLOTS_PER_BLOCK));
+            METADATA_WORD(qf, runends, slot-1) |= (1ULL << ((slot-1) % QF_SLOTS_PER_BLOCK));
+          }
         } else {
           insert_one_slot(qf, quotient, slot, 0);
         }
-        (*old_keepsake_runend)++;
+        (*keepsake_runend)++;
         (*last_written_slot)++;
       }
     }
+    // We've made space, so now just write out as many bits possible.
     uint64_t slot_value = get_slot(qf, slot);
     slot_value = slot_value & BITMASK(slot_offset);
     int space_in_cur_slot = (qf->metadata->bits_per_slot - slot_offset);
@@ -3427,7 +3441,7 @@ static inline int _add_to_end_of_keepsake_run(
     slot_value |= ((value & BITMASK(space_in_cur_slot)) << slot_offset);
     set_slot(qf, slot, slot_value);
 
-    if (slot != *old_keepsake_runend) {
+    if (slot != *keepsake_runend) {
       METADATA_WORD(qf, extensions, slot) &= ~(1ULL << (slot % QF_SLOTS_PER_BLOCK));
       METADATA_WORD(qf, runends, slot) &= ~(1ULL << (slot % QF_SLOTS_PER_BLOCK));
     }
@@ -3435,18 +3449,28 @@ static inline int _add_to_end_of_keepsake_run(
     num_bits -= space_in_cur_slot;
     slot_offset = 0;
     slot++;
+    num_slots_consumed++;
   }
   uint64_t last_slot = slot - 1;
-  if (last_slot != *old_keepsake_runend) {
+  if (last_slot != *keepsake_runend) {
     METADATA_WORD(qf, extensions, last_slot) |= (1ULL << (last_slot % QF_SLOTS_PER_BLOCK));
     METADATA_WORD(qf, runends, last_slot) |= (1ULL << (last_slot % QF_SLOTS_PER_BLOCK));
   }
+#if DEBUG
+  assert(is_keepsake_or_quotient_runend(qf, *keepsake_runend));
+  if(keepsake_runend_is_quotient_runend) {
+    assert(is_runend(qf, *keepsake_runend));
+  }
+#endif
   return 0;
 }
 
 int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bits, uint64_t memento, uint64_t start_index, uint64_t* last_overwritten_index, uint64_t* old_keespake_runend)
 {
   // assert(num_fingerprint_bits >= qf->metadata->quotient_bits + qf->metadata->bits_per_slot);
+#if DEBUG
+  uint64_t hash = fingerprint;
+#endif
   int verbose = 0;
   int extension_found = 0;
   uint64_t current_index = start_index;
@@ -3482,7 +3506,7 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
 
   if (!extension_found) {
 #if DEBUG
-    // fprintf(stdout, "Inserting extenstion at %lld\n", current_index);
+    fprintf(stdout, "Inserting extenstion at %lld\n", current_index);
 #endif
     uint64_t value = fingerprint_remainder;
     value |= (fingerprint_ext_bits << qf->metadata->key_remainder_bits);
@@ -3492,7 +3516,20 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
       perror("Too many extensions\n");
       abort(); // TODO(chesetti): TOO MANY EXTENSIONS!
     }
-    _add_to_end_of_keepsake_run(qf, fingerprint_quotient, value, current_index, 0, num_bits, last_overwritten_index, old_keespake_runend);
+    _add_to_end_of_keepsake_run(
+        qf, 
+        fingerprint_quotient, 
+        value, 
+        current_index, 
+        0 /*slot_offset*/, 
+        num_bits, 
+        1, /*new keepsake*/
+        last_overwritten_index, 
+        old_keespake_runend
+      );
+#if DEBUG
+    fprintf(stdout, "Should have inserted %llu (with extension) at %lld\n", value, current_index);
+#endif
     if (num_ext_bits) {
       num_ext_bits -= qf->metadata->value_bits;
       METADATA_WORD(qf, extensions, current_index) |= (1ULL << (current_index % QF_SLOTS_PER_BLOCK));
@@ -3502,6 +3539,14 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
         num_ext_bits -= qf->metadata->bits_per_slot;
       }
     }
+#if DEBUG
+    if(qf_point_query(qf, (hash << qf->metadata->value_bits) | memento, QF_KEY_IS_HASH)==0) {
+      printf("Not found, something is wrong!\n");
+      // This is to let gdb inspect the query.
+      int result = qf_point_query(qf, (hash << qf->metadata->value_bits) | memento, QF_KEY_IS_HASH);
+      printf("%d\n", result);
+    }
+#endif
     return 0;
   }
 
@@ -3579,7 +3624,20 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
       current_slot >>= memento_offset;
     }
   }
-  _add_to_end_of_keepsake_run(qf, fingerprint_quotient, memento, current_index, memento_offset, qf->metadata->value_bits, last_overwritten_index, old_keespake_runend);
+#if DEBUG
+    fprintf(stdout, "Should have inseerted %llu (with extension) at %lld %lld\n", memento, current_index, memento_offset);
+#endif
+  _add_to_end_of_keepsake_run(
+      qf, 
+      fingerprint_quotient, 
+      memento, 
+      current_index, 
+      memento_offset, 
+      qf->metadata->value_bits, 
+      0, /* new keepsake */
+      last_overwritten_index, 
+      old_keespake_runend
+    );
   return 0;
 }
 
