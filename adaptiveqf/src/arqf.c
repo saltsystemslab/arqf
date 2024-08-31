@@ -47,7 +47,7 @@ int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t
     uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
     db_insert(arqf->rhm, &fingerprint, sizeof(fingerprint), &key, sizeof(key), 1, 0);
     if ((i % 100000) == 0) {
-      printf("\r%lld/%lld keys loaded into RHM", i, nkeys);
+      // printf("\r%lld/%lld keys loaded into RHM", i, nkeys);
     }
   }
   return 0;
@@ -114,8 +114,8 @@ int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags)
     }
 
 #if DEBUG
-    fprintf(stderr, "Extending %016llx to %016llx\n", colliding_fingerprint, fingerprint_bits & BITMASK(num_fingerprint_bits));
-    printf("Overwriting keepsake: %llu %llu %llu\n", keepsake_start_index, last_overwritten_index, collision_runend_index);
+    // fprintf(stderr, "Extending %016llx to %016llx\n", colliding_fingerprint, fingerprint_bits & BITMASK(num_fingerprint_bits));
+    // printf("Overwriting keepsake: %llu %llu %llu\n", keepsake_start_index, last_overwritten_index, collision_runend_index);
 #endif
     _overwrite_keepsake(arqf->qf, fingerprint_bits, num_fingerprint_bits, memento, keepsake_start_index, &last_overwritten_index, &collision_runend_index);
     // Insert new fingerprints into the RHM.
