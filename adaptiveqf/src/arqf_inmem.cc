@@ -40,7 +40,6 @@ int InMemArqf_bulk_load(InMemArqf* arqf, uint64_t *sorted_hashes, uint64_t *keys
     }
     uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
     arqf->rhm.insert({fingerprint, key});
-    }
   }
   return 0;
 }
