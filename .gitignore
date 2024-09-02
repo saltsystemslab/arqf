@@ -8,3 +8,26 @@ paper_results/*
 workloads/*
 
 adaptiveqf/obj/*
+adaptiveqf/bm
+adaptiveqf/db
+adaptiveqf/src/.arqf_inmem.cc.swp
+adaptiveqf/stats_splinter_fprates.csv
+adaptiveqf/stats_splinter_inc_queries.csv
+adaptiveqf/stats_splinter_inserts.csv
+adaptiveqf/stats_splinter_queries.csv
+adaptiveqf/test_micro
+adaptiveqf/test_splinter_inserts
+adaptiveqf/test_splinter_lltable_throughput
+adaptiveqf/test_splinter_ops
+adaptiveqf/test_split_throughput
+adaptiveqf/test_throughput
+adaptiveqf/unif_i.csv
+adaptiveqf/unif_q.csv
+bench/.workload_gen.cpp.swp
+bench/scripts/figures/
+corr_test/
+memento.csv
+out.txt
+release/
+test.csv
+true_test/
