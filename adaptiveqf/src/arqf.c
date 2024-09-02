@@ -46,9 +46,6 @@ int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t
     }
     uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
     db_insert(arqf->rhm, &fingerprint, sizeof(fingerprint), &key, sizeof(key), 1, 0);
-    if ((i % 100000) == 0) {
-      // printf("\r%lld/%lld keys loaded into RHM", i, nkeys);
-    }
   }
   return 0;
 }

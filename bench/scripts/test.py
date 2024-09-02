@@ -29,13 +29,14 @@ use_numa = False
 membind = 0
 physcpubind = 16
 
-ds_list = ["memento", "arqf"] #, "rosetta", "snarf", "proteus", "rencoder", "arqf"]
+ds_list = ["memento", "arqf", "adaptive_arqf_inmem"] #, "rosetta", "snarf", "proteus", "rencoder", "arqf"]
 # ds_list_with_bucketing = ds_list.copy() + ['bucketing']
 
 ds_benchmark_executables = {}
 
 ds_parameters = {'memento': list(np.linspace(8, 28, 6)),  # eps
                  'arqf': list(np.linspace(8, 28, 6)), # eps
+                 'adaptive_arqf_inmem': list(np.linspace(12, 28, 5)), # eps
                  'grafite': list(np.linspace(8, 28, 6)),  # eps
                  'surf': [1, 4, 7, 10, 13, 16],  # suffix bits
                  'snarf': list(np.linspace(8, 28, 6)),  # bpk
@@ -45,6 +46,7 @@ ds_parameters = {'memento': list(np.linspace(8, 28, 6)),  # eps
 
 ds_parameters_small_universe = {'memento': list(np.linspace(7, 12, 6)),  # eps
                                 'arqf' : list(np.linspace(7, 12, 6)),
+                                'adaptive_arqf_inmem': list(np.linspace(12, 28, 5)), # eps
                                 'grafite': list(np.linspace(7, 12, 6)),  # eps
                                 'surf': [0, 1, 2, 3, 4, 5],  # suffix bits
                                 'snarf': list(np.linspace(7, 12, 6)),  # bpk
@@ -211,6 +213,7 @@ if __name__ == "__main__":
         ds_parameters = {'memento': [20],
                          'grafite': [20],
                          'arqf': [20],
+                         'adaptive_arqf_inmem': [20],
                          'surf': [10],  # suffix bits
                          'snarf': [20],  # bpk
                          'rosetta': [20],  # bpk

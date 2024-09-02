@@ -5,18 +5,12 @@
     - `keepsake_flush_bits(keepsake_slot_index, *keepsake_buffer, *keepsake_slot_offset)`
   - `qf_iterator`
 - [X] Write verification functions/unit tests with above two
-- [ ] Implement point query 
-- [ ] Implement range query
+- [X] Implement point query 
+- [X] Implement range query
 - [ ] Optimize
-  - [ ] Do we need the second HASH function?
-  - [ ] Binary search for search
-  - [ ] Skip entire keepsake boxes in query (jump tp next runend)
-- [ ] Write verification functions/unit tests again
--   [ ] Port all memento tests?
-- [ ] Run benchmarks, check sanity - You should have a correct range filter now
-- [ ] Understand reverse hash map functionality 
-- [ ] Implement adaptivity.
-- [ ] Implement `qf_set_memento(keepsake_index, num_extensions, memento_index, memento_value)`
-- [ ] Implement `qf_get_memento(keepsake_index, num_extensions, memento_index)`
-
-- [ ] Add warning if quotient + extension + memento exceeds 64 bits.
+- [X] Run benchmarks, check sanity - You should have a correct range filter now
+- [X] Understand reverse hash map functionality 
+- [X] Implement adaptivity.
+  - [X] Fix adapt function
+  - [X] Fix insert function (No common prefix within a quotient run)
+- [X] Add warning if quotient + extension + memento exceeds 64 bits.
