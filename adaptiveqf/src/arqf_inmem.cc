@@ -94,8 +94,10 @@ inline int adapt_keepsake(
     uint64_t keepsake_fingerprint, 
     uint64_t keepsake_start,
     uint64_t keepsake_end) {
-#if DEBUG
+#if DEBUG 
+#if VERBOSE
    printf("Adapting hash: %016llx in keepsake[%llu %llu] containing %u keys\n", fp_hash, keepsake_start, keepsake_end, num_colliding_keys);
+#endif
   for (uint64_t i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
     assert(qf_point_query(arqf->qf, key_in_keepsake, 0) == 1);
@@ -189,6 +191,11 @@ inline int  maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_h
       arqf->qf, fp_hash, &colliding_fingerprint, &collision_index, &num_ext_bits, &collision_runend_index);
   if (ret != 0) return 0; // There was no need to adapt this keepsake, so consider as adapted.
 
+  if (arqf->qf->metadata->noccupied_slots > 0.999 * arqf->qf->metadata->xnslots) {
+    printf("Hit space limit %llu %llu\n", arqf->qf->metadata->noccupied_slots, arqf->qf->metadata->xnslots);
+    return -1; // not enough space;
+  }
+
   uint64_t num_colliding_keys = arqf->rhm.count(colliding_fingerprint);
   uint64_t* colliding_keys = (uint64_t*)malloc(num_colliding_keys * sizeof(uint64_t));
 
@@ -223,7 +230,7 @@ int InMemArqf_adapt_range(InMemArqf* arqf, uint64_t left, uint64_t right, int fl
     l_hash = arqf_hash(arqf->qf, l_hash);
     r_hash = arqf_hash(arqf->qf, r_hash);
   }
-#if DEBUG 
+#if VERBOSE 
    printf("Adapting range: %llu %llu, hash: %llu %llu\n", left, right, l_hash, r_hash);
 #endif
   int ret1 = maybe_adapt_keepsake(arqf, left, l_hash, LEFT_PREFIX);

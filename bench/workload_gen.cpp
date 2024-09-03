@@ -229,15 +229,9 @@ Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<ui
     auto i = 0;
     while (q.size() < n_queries) {
         if (++n_iterations >= 100 * n_queries) {
-            std::string in;
             std::cout << std::endl
-                      << "application seems stuck, close it or save less query? (y/n/save) ";
-            std::cin >> in;
-            if (in == "save")
-                break;
-            else if (in == "y")
-                throw std::runtime_error("error: timeout for the workload generation");
-            n_iterations = 0;
+                      << "application seems stuck, saving "<<q.size() <<"queries. " << std::endl;
+            break;
         }
 
         auto range_size = (min_range == max_range) ? min_range : static_cast<uint64_t>(range_distr(gen_range));

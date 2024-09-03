@@ -232,6 +232,11 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
 }
 
 template <typename value_type>
+inline bool adapt_qf(QF  *qf, const value_type left, const value_type right) {
+  return false;
+}
+
+template <typename value_type>
 inline bool query_qf(QF *qf, const value_type left, const value_type right)
 {
     uint64_t l_hash = arqf_hash(qf, left);
@@ -265,13 +270,32 @@ int main(int argc, char const *argv[])
         std::cerr << parser;
         std::exit(1);
     }
-
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
+    std::cout<<keys.size()<<" "<<queries.size()<<std::endl;
+    auto test_type = parser.get<std::string>("--test_type");
 
-    experiment(pass_fun(init_qf), pass_ref(query_qf), 
+    if (test_type == "adaptivity") {
+      experiment_adaptivity(pass_fun(init_qf), pass_ref(query_qf), pass_ref(adapt_qf),
                 pass_ref(size_qf), arg, keys, queries, queries);
-
+    } else if (test_type == "adversarial") {
+        experiment_adversarial(
+          pass_fun(init_inmem_db),
+          pass_ref(insert_inmem_db),
+          pass_ref(query_inmem_db),
+          pass_fun(init_qf), 
+          pass_ref(query_qf), 
+          pass_ref(adapt_qf),
+          pass_ref(size_qf), 
+          arg, 
+          0, /* Cache Size */
+          keys, 
+          queries, 
+          queries
+        );
+    } else {
+      std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;
+      abort();
+    }
     print_test();
-
     return 0;
 }

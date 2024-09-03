@@ -3052,12 +3052,14 @@ static inline void _keepsake_flush_mementos(
   *buffer = *buffer & BITMASK(*buffer_offset);
   while (*buffer_offset >= bits_per_slot) {
     set_slot(qf, (*slot_index), (*buffer) & BITMASK(qf->metadata->bits_per_slot));
+    qf->metadata->noccupied_slots++;
     *slot_index = *slot_index+1;
     *buffer_offset = (*buffer_offset - bits_per_slot);
     *buffer = (*buffer >> bits_per_slot);
   }
   if (*buffer_offset > 0) {
     set_slot(qf, *slot_index, (*buffer) & BITMASK(*buffer_offset));
+    qf->metadata->noccupied_slots++;
     *slot_index = *slot_index+1;
   }
   *buffer = 0;
@@ -3477,6 +3479,7 @@ static inline int _add_to_end_of_keepsake_run(
           METADATA_WORD(qf, extensions, *last_written_slot) &= ~(1ULL << ((*last_written_slot) % QF_SLOTS_PER_BLOCK));
         }
       } else {
+        qf->metadata->noccupied_slots++;
         if (slot == (*keepsake_runend) + 1) {
           // This should preserve the runend bits of keepsake_runend.
           // We need valid runends so that that insert_one_slot works as intended.

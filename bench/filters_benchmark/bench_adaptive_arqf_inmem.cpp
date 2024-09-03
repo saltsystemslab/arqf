@@ -202,13 +202,15 @@ inline bool query_arqf(InMemArqf *arqf, const value_type left, const value_type 
 }
 
 template <typename value_type>
-inline void adapt_arqf(InMemArqf *arqf, const value_type left, const value_type right)
+inline bool adapt_arqf(InMemArqf *arqf, const value_type left, const value_type right)
 {
+  int ret;
   if (left == right) {
-    InMemArqf_adapt(arqf, left, 0);
+    ret = InMemArqf_adapt(arqf, left, 0);
   } else {
-    InMemArqf_adapt_range(arqf, left, right, 0);
+    ret = InMemArqf_adapt_range(arqf, left, right, 0);
   }
+  return (ret==0);
 }
 
 inline size_t size_arqf(InMemArqf *f)
@@ -232,10 +234,30 @@ int main(int argc, char const *argv[])
     }
 
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
-
-    experiment_adaptivity(pass_fun(init_arqf), pass_ref(query_arqf), pass_ref(adapt_arqf),
+    auto test_type = parser.get<std::string>("--test_type");
+    if (test_type == "adaptivity") {
+      experiment_adaptivity(pass_fun(init_arqf), pass_ref(query_arqf), pass_ref(adapt_arqf),
                 pass_ref(size_arqf), arg, keys, queries, queries);
+    } else if (test_type == "adversarial") {
+        experiment_adversarial(
+          pass_fun(init_inmem_db),
+          pass_ref(insert_inmem_db),
+          pass_ref(query_inmem_db),
+          pass_fun(init_arqf), 
+          pass_ref(query_arqf), 
+          pass_ref(adapt_arqf),
+          pass_ref(size_arqf), 
+          arg, 
+          0, /* Cache Size */
+          keys, 
+          queries, 
+          queries
+        );
 
+    } else {
+      std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;
+      abort();
+    }
     print_test();
 
     return 0;

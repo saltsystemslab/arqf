@@ -22,6 +22,25 @@
 #include <argparse/argparse.hpp>
 #include "bench_utils.hpp"
 
+inline std::set<uint64_t> *init_inmem_db(double db_cache_size) {
+  std::set<uint64_t> *s = new std::set<uint64_t>();
+  return s;
+}
+template <typename value_type>
+inline void insert_inmem_db(std::set<uint64_t> *s, const value_type key)
+{
+  s->insert(key);
+}
+template <typename value_type>
+inline bool query_inmem_db(std::set<uint64_t> *s, const value_type left, const value_type right)
+{
+  auto it = s->lower_bound(left);
+  if (it == s->end() || *it > right) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * This file contains a template class for running and measuring benchmarks of range filters.
  */
@@ -119,6 +138,108 @@ void experiment_adaptivity(InitFun init_f, RangeFun range_f, AdaptFun adapt_f, S
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
+template <
+  typename DbInitFun, typename DbInsertFun, typename DbQueryFun,
+  typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, 
+  typename key_type, typename... Args>
+void experiment_adversarial(
+    DbInitFun db_init,
+    DbInsertFun db_insert,
+    DbQueryFun db_query,
+    InitFun init_f,
+    RangeFun range_f,
+    AdaptFun adapt_f,
+    SizeFun size_f,
+    const double param,
+    const double db_cache_size,
+    InputKeys<key_type>& keys,
+    Workload<key_type>& queries,
+    Args... args)
+{
+
+  auto f = init_f(keys.begin(), keys.end(), param, args...);
+  std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+
+  auto db = db_init(db_cache_size);
+
+  for (auto key : keys) {
+    db_insert(db, key);
+  }
+  std::cout << "[+] Finished loading DB, starting queries " << std::endl;
+  std::vector< std::pair<uint64_t, uint64_t> > adv_queries;
+
+
+  auto fp = 0, fn = 0;
+  start_timer(warmup_time);
+  for (auto q : queries) {
+    const auto [left, right, original_result] = q;
+    bool query_result = range_f(f, left, right);
+    if (query_result) {
+      bool actual_result = db_query(db, left, right);
+      if (!actual_result) {
+        adv_queries.push_back(std::pair<uint64_t, uint64_t>(left, right));
+        fp++;
+        adapt_f(f, left, right);
+      }
+    }
+    if (!query_result && original_result) {
+      std::cerr << "[!] alert, found false negative!" << std::endl;
+      fn++;
+    }
+  }
+  stop_timer(warmup_time);
+
+  std::cerr << "[+] collected " << adv_queries.size() << "adversarial queries"<< std::endl;
+  uint64_t count = 0;
+
+  start_timer(adv_query_time);
+  uint64_t adv_freq = 5; // 5 percent of queries will be from adversarial set..
+  uint64_t adv_i = 0;
+  uint64_t adv_fp = 0;
+  for (auto q : queries) {
+    const auto [left, right, original_result] = q;
+
+    bool query_result;
+    if (count % 100 < adv_freq) {
+      uint64_t adv_left = adv_queries[adv_i].first;
+      uint64_t adv_right = adv_queries[adv_i].second;
+      adv_i++;
+      adv_i = adv_i % adv_queries.size();
+      query_result = range_f(f, adv_left, adv_right);
+    } else {
+      query_result = range_f(f, left, right);
+    }
+
+
+    if (query_result) {
+      bool actual_result = db_query(db, left, right);
+      if (!actual_result) {
+        adv_fp++;
+      }
+    }
+    if (!query_result && original_result) {
+      std::cerr << "[!] alert, found false negative!" << std::endl;
+      fn++;
+    }
+    count++;
+  }
+  stop_timer(adv_query_time);
+
+
+
+  auto size = size_f(f);
+  test_out.add_measure("adversarial size", size);
+  test_out.add_measure("size", size);
+  test_out.add_measure("bpk", TO_BPK(size, keys.size()));
+  test_out.add_measure("fpr", ((double)fp / queries.size()));
+  test_out.add_measure("false_neg", fn);
+  test_out.add_measure("n_keys", keys.size());
+  test_out.add_measure("n_queries", queries.size());
+  test_out.add_measure("false_positives", fp);
+  test_out.add_measure("adversarial_fp", adv_fp);
+  std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+}
+
 argparse::ArgumentParser init_parser(const std::string &name)
 {
     argparse::ArgumentParser parser(name);
@@ -144,6 +265,11 @@ argparse::ArgumentParser init_parser(const std::string &name)
             .nargs(1)
             .scan<'i', int>();
 
+    // TODO(chesetti): There is a way to set allowed values.
+    parser.add_argument("--test_type")
+        .help("one of adaptivity, adversial")
+        .default_value("adaptivity")
+        .nargs(1);
 
     return parser;
 }
