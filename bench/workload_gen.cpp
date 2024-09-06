@@ -48,6 +48,46 @@ InputKeys<uint64_t> keys_from_file = InputKeys<uint64_t>();
 #define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 #define PBWIDTH 60
 
+inline uint64_t MurmurHash64A(const void * key, int len, unsigned int s)
+{
+	const uint64_t m = 0xc6a4a7935bd1e995;
+	const int r = 47;
+
+	uint64_t h = s ^ (len * m);
+
+	const uint64_t * data = (const uint64_t *)key;
+	const uint64_t * end = data + (len/8);
+
+	while(data != end) {
+		uint64_t k = *data++;
+
+		k *= m;
+		k ^= k >> r;
+		k *= m;
+
+		h ^= k;
+		h *= m;
+	}
+	const unsigned char * data2 = (const unsigned char*)data;
+
+	switch(len & 7) {
+		case 7: h ^= (uint64_t)data2[6] << 48; do {} while (0);  /* fallthrough */
+		case 6: h ^= (uint64_t)data2[5] << 40; do {} while (0);  /* fallthrough */
+		case 5: h ^= (uint64_t)data2[4] << 32; do {} while (0);  /* fallthrough */
+		case 4: h ^= (uint64_t)data2[3] << 24; do {} while (0);  /* fallthrough */
+		case 3: h ^= (uint64_t)data2[2] << 16; do {} while (0);  /* fallthrough */
+		case 2: h ^= (uint64_t)data2[1] << 8; do {} while (0); /* fallthrough */
+		case 1: h ^= (uint64_t)data2[0];
+						h *= m;
+	};
+
+	h ^= h >> r;
+	h *= m;
+	h ^= h >> r;
+
+	return h;
+}
+
 void save_keys(InputKeys<uint64_t> &keys, const std::string &file)
 {
     if (save_binary)
@@ -114,14 +154,15 @@ bool create_dir_recursive(const std::string &dir_name) {
     return true;
 }
 
-InputKeys<uint64_t> generate_keys_zipfian(uint64_t n_keys, double pow, uint64_t batch_size, uint64_t max_key = UINT32_MAX - 1) {
+InputKeys<uint64_t> generate_keys_zipfian(uint64_t n_keys, double pow, uint64_t batch_size, uint64_t universe_size = UINT32_MAX - 1, uint64_t s = 0) {
   std::vector<uint64_t> keys_set;
   if (batch_size == 0) batch_size = n_keys;
+  if (s == 0) s = time(NULL);
   uint64_t *zipfian = new uint64_t[batch_size];
   for (uint64_t i=0; i < n_keys; i = i+batch_size) {
-    generate_random_keys(zipfian + i, max_key, batch_size, 1.5);
+    generate_random_keys(zipfian + i, universe_size, batch_size, 1.5);
     for (uint64_t j=0; j < batch_size; j++) {
-      keys_set.push_back(zipfian[j]);
+      keys_set.push_back(MurmurHash64A(&zipfian[j], sizeof(zipfian[j]), s));
     }
   }
   return keys_set;
@@ -209,17 +250,18 @@ Workload<uint64_t> generate_true_queries(InputKeys<uint64_t> &keys,uint64_t n_qu
 Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<uint64_t> &keys,
                                           uint64_t n_queries, uint64_t min_range, uint64_t max_range,
                                           const double corr_degree, const long double stddev, const long zipf_batch_size=0,
-                                          const uint64_t universe_size = UINT64_MAX) {
-    std::set<std::tuple<uint64_t, uint64_t, bool>> q;
+                                          const uint64_t zipf_universe_size = UINT64_MAX) {
+    std::set<std::tuple<uint64_t, uint64_t, bool>> unique_queries;
+    std::vector<std::tuple<uint64_t, uint64_t, bool>> q; 
 
     std::vector<uint64_t> middle_points;
 
     if (qdist == "qnormal")
         middle_points = generate_keys_normal(10 * n_queries, stddev);
     else if (qdist == "quniform")
-        middle_points = generate_keys_uniform(3 * n_queries, universe_size-1);
+        middle_points = generate_keys_uniform(3 * n_queries);
     else if (qdist == "qzipfian") 
-        middle_points = generate_keys_zipfian(n_queries, 1.5, zipf_batch_size, universe_size-1);
+        middle_points = generate_keys_zipfian(n_queries, 1.5, zipf_batch_size, zipf_universe_size-1);
     else // qdist == "qcorrelated"
     {
         std::mt19937 g(seed);
@@ -266,15 +308,28 @@ Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<ui
             auto p = middle_points[q.size()] + corr_distr(gen_corr);
             std::tie(left, right) = point_to_range(p, range_size);
         }
-        if (std::numeric_limits<uint64_t>::max() - left < range_size)
+        if (std::numeric_limits<uint64_t>::max() - left < range_size) {
+            left = std::numeric_limits<uint64_t>::max() - range_size;
+            std::cout<<"Query key skipped"<<std::endl;
             continue;
+        }
 
         auto q_result = (range_size > 1) ? vector_range_query(keys, left, right) : vector_point_query(keys, left);
         // Don't discard true queries for zipfian distribution.
-        if (!allow_true_queries && q_result && qdist != "qzipfian")
+        if (!allow_true_queries && q_result && qdist != "qzipfian") {
+            std::cout<<"Query key skipped"<<std::endl;
             continue;
+        }
 
-        q.emplace(left, right, q_result);
+        if (qdist != "qzipfian") {
+          uint64_t old_size = unique_queries.size();
+          unique_queries.emplace(left, right, q_result);
+          if (unique_queries.size() == old_size) {
+            continue;
+          }
+        }
+
+        q.push_back(std::make_tuple(left, right, q_result));
         printProgress(((double) q.size()) / n_queries);
     }
 
@@ -295,7 +350,7 @@ Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<ui
 
 void generate_synth_datasets(const std::vector<std::string> &kdist, const std::vector<std::string> &qdist,
                              uint64_t n_keys, uint64_t n_queries, uint64_t n_query_sets,
-                             std::vector<int> range_size_list, const uint64_t universe_size = UINT64_MAX, 
+                             std::vector<int> range_size_list, const uint64_t zipf_universe_size = UINT64_MAX, 
                              const double corr_degree = 0.8, const long double stddev = (long double) UINT64_MAX * 0.1,
                              const long zipf_batch_size = 0) {
     std::vector<uint64_t> ranges(range_size_list.size());
@@ -316,7 +371,7 @@ void generate_synth_datasets(const std::vector<std::string> &kdist, const std::v
 
     for (const auto& k: kdist) {
         std::string root_path = "./" + k + "/";
-        auto keys = (k == "kuniform") ? generate_keys_uniform(n_keys, universe_size-1) : generate_keys_normal(n_keys, stddev);
+        auto keys = (k == "kuniform") ? generate_keys_uniform(n_keys) : generate_keys_normal(n_keys, stddev);
         std::cout << std::endl
                   << "[+] generated `" << k << "` keys" << std::endl;
         for (uint64_t qset = 0; qset < n_query_sets; qset++) {
@@ -324,7 +379,7 @@ void generate_synth_datasets(const std::vector<std::string> &kdist, const std::v
             for (auto i = 0; i < ranges.size(); i++) {
                 auto range_size = ranges[i];
                 auto queries = (q == "qtrue") ? generate_true_queries(keys, n_queries, range_size) :
-                  generate_synth_queries(q, keys, n_queries, range_size, range_size, corr_degree, stddev, zipf_batch_size, universe_size);
+                  generate_synth_queries(q, keys, n_queries, range_size, range_size, corr_degree, stddev, zipf_batch_size, zipf_universe_size);
                 std::cout << std::endl
                           << "[+] generated `" << q << "_" << range_size_list[i] << "` queries" << std::endl;
 
@@ -337,14 +392,7 @@ void generate_synth_datasets(const std::vector<std::string> &kdist, const std::v
                 if (!create_dir_recursive(queries_path))
                     throw std::runtime_error("error, impossible to create dir");
 
-                if (allow_true_queries && range_size == 1)
-                    save_queries(queries, queries_path + "point", "",queries_path + "result");
-                else if (allow_true_queries)
-                    save_queries(queries, queries_path + "left", queries_path + "right", queries_path + "result");
-                else if (range_size == 1)
-                    save_queries(queries, queries_path + "point");
-                else
-                    save_queries(queries, queries_path + "left", queries_path + "right");
+                save_queries(queries, queries_path + "left", queries_path + "right", queries_path + "result");
                 std::cout << "[+] queries wrote at " << queries_path << std::endl;
             }
 
@@ -567,7 +615,7 @@ int main(int argc, char const *argv[]) {
             .default_value(uint64_t(0))
             .scan<'u', uint64_t>();
 
-    parser.add_argument("-u", "--universe-size")
+    parser.add_argument("-u", "--zipf-universe-size")
             .help("Number of elements in the universe")
             .required()
             .default_value(UINT64_MAX-1)
@@ -601,7 +649,7 @@ int main(int argc, char const *argv[]) {
     auto ranges_int = parser.get<std::vector<int>>("--range-size");
     auto corr_degree = parser.get<double>("--corr-degree");
     auto zipf_batch_size = parser.get<uint64_t>("--zipf-batch-size");
-    auto universe_size = parser.get<uint64_t>("--universe-size");
+    auto zipf_universe_size = parser.get<uint64_t>("--zipf-universe-size");
     auto n_query_sets = parser.get<uint64_t>("--n-query-sets");
 
     allow_true_queries = parser.get<bool>("--allow-true");
@@ -623,7 +671,7 @@ int main(int argc, char const *argv[]) {
 
     }
     else
-        generate_synth_datasets(kdist, qdist, n_keys, n_queries, n_query_sets, ranges_int, universe_size, corr_degree, zipf_batch_size);
+        generate_synth_datasets(kdist, qdist, n_keys, n_queries, n_query_sets, ranges_int, zipf_universe_size, corr_degree, zipf_batch_size);
 
     return 0;
 }
