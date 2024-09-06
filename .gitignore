@@ -31,3 +31,5 @@ out.txt
 release/
 test.csv
 true_test/
+workload_adaptivity/*
+workload_adaptivity_small/*

@@ -974,11 +974,13 @@ void qf_dump_metadata(const QF *qf) {
 				 qf->metadata->noccupied_slots,
 				 qf->metadata->nelts,
 				 qf->metadata->ndistinct_elts);
-	printf("Key_bits: %lu Memento_bits: %lu Fingerprint_bits: %lu Bits_per_slot: %lu\n",
-				 qf->metadata->key_bits,
-				 qf->metadata->memento_bits,
-				 qf->metadata->fingerprint_bits,
-				 qf->metadata->bits_per_slot);
+  printf("Key_bits: %lu Memento_bits: %lu Fingerprint_bits: %lu Bits_per_slot: %lu Qbits: %lu XNumSlots: %lu\n",
+      qf->metadata->key_bits,
+      qf->metadata->memento_bits,
+      qf->metadata->fingerprint_bits,
+      qf->metadata->bits_per_slot,
+      qf->metadata->original_quotient_bits,
+      qf->metadata->xnslots);
 }
 
 void qf_dump(const QF *qf)
@@ -3976,5 +3978,4 @@ uint64_t qf_magnitude(const QF *qf)
 	return sqrt(qf_inner_product(qf, qf));
 }
 #endif /* QF_ITERATOR */
-
 

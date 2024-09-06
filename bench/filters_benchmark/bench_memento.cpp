@@ -130,7 +130,7 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
     //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
     const uint64_t seed = 1380;
     const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-    const double load_factor = 0.95;
+    const double load_factor = 0.90;
     const uint64_t n_slots = n_items / load_factor + std::sqrt(n_items);
     uint32_t memento_bits = 1;
     while ((1ULL << memento_bits) < max_range_size)
@@ -146,6 +146,7 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
     QF *qf = (QF *) malloc(sizeof(QF));
     qf_malloc(qf, n_slots, key_size, memento_bits, QF_HASH_DEFAULT, seed);
     qf_set_auto_resize(qf, true);
+    qf_dump_metadata(qf);
 
     start_timer(build_time);
 
@@ -191,9 +192,89 @@ inline bool query_memento(QF *f, const value_type left, const value_type right)
     return qf_range_query(f, l_key, l_memento, r_key, r_memento, QF_NO_LOCK);
 }
 
+template <typename value_type>
+inline bool adapt_memento(QF *f, const value_type left, const value_type right)
+{
+  return false;
+}
+
 inline size_t size_memento(QF *f)
 {
     return qf_get_total_size_in_bytes(f);
+}
+
+inline void add_metadata(QF *f) {
+  test_out.add_measure("q_bits", f->metadata->original_quotient_bits);
+  test_out.add_measure("r_bits", f->metadata->fingerprint_bits);
+  test_out.add_measure("m_bits", f->metadata->memento_bits);
+  test_out.add_measure("n_slots", f->metadata->xnslots);
+  test_out.add_measure("noccupied_slots", f->metadata->noccupied_slots);
+}
+
+template < typename DbInitFun, typename DbInsertFun, typename DbQueryFun,
+    typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun,
+    typename... Args>
+void run_test(
+    argparse::ArgumentParser& parser,
+    DbInitFun db_init,
+    DbInsertFun db_insert,
+    DbQueryFun db_query,
+    InitFun init_f,
+    RangeFun range_f,
+    AdaptFun adapt_f,
+    SizeFun size_f,
+    MetadataFun metadata_f
+    )
+{
+    auto test_type = parser.get<std::string>("--test-type");
+    auto [ keys, queries, arg] = read_parser_arguments(parser);
+    if (test_type == "adaptivity") {
+      experiment_adaptivity(
+          init_f, 
+          range_f, 
+          adapt_f,
+          size_f, 
+          metadata_f,
+          arg, 
+          keys, 
+          queries, 
+          queries);
+    } else if (test_type == "adversarial") {
+        experiment_adversarial(
+          db_init,
+          db_insert,
+          db_query,
+          init_f, 
+          range_f,
+          adapt_f,
+          size_f, 
+          arg,
+          0, /* Cache Size */
+          keys, 
+          queries,
+          queries /* passed onto filter and DB init */
+        );
+    } else if (test_type == "adaptivity_fpr") {
+        auto fpr_queries = read_fpr_queries(parser);
+        experiment_adaptivity_fpr(
+          db_init,
+          db_insert,
+          db_query,
+          init_f, 
+          range_f, 
+          adapt_f,
+          size_f, 
+          arg, /* bpk */ 
+          0, /* Cache Size */
+          keys, 
+          queries, 
+          fpr_queries,
+          queries /* passed onto filter init */
+        );
+    } else {
+      std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;
+      abort();
+    }
 }
 
 int main(int argc, char const *argv[])
@@ -211,41 +292,20 @@ int main(int argc, char const *argv[])
         std::exit(1);
     }
 
-    auto [ keys, queries, arg ] = read_parser_arguments(parser);
-    auto inmem = parser.get<bool>("--run_inmem");
-    auto test_type = parser.get<std::string>("--test_type");
-
-    if (test_type == "adaptivity") {
-      experiment_adaptivity(pass_fun(init_arqf), pass_ref(query_arqf), pass_ref(adapt_arqf),
-                pass_ref(size_arqf), arg, keys, queries, queries);
-    } else if (test_type == "adversarial") {
-      if (inmem) {
-        experiment_adversarial(
-          pass_fun(init_inmem_db),
-          pass_ref(insert_inmem_db),
-          pass_ref(query_inmem_db),
-          pass_fun(init_arqf), 
-          pass_ref(query_arqf), 
-          pass_ref(adapt_arqf),
-          pass_ref(size_arqf), 
-          arg, 
-          0, /* Cache Size */
-          keys, 
-          queries, 
-          queries
-        );
-      } else {
-        abort();
-      }
-    } else {
-      std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;
-      abort();
-    }
-
-    experiment(pass_fun(init_memento), pass_ref(query_memento), 
-                pass_ref(size_memento), arg, keys, queries, queries);
-
+    run_test(
+        parser,
+        pass_fun(init_inmem_db),
+        pass_ref(insert_inmem_db),
+        pass_ref(query_inmem_db),
+        pass_fun(init_memento),
+        pass_ref(query_memento),
+        pass_ref(adapt_memento),
+        pass_ref(size_memento),
+        pass_ref(add_metadata)
+    );
     print_test();
+
+
 
     return 0;
 }

@@ -178,7 +178,7 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
     //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
     const uint64_t seed = 1380;
     const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-    const double load_factor = 0.95;
+    const double load_factor = 0.90;
     const uint64_t n_slots = n_items / load_factor + std::sqrt(n_items);
     uint32_t memento_bits = 1;
     while ((1ULL << memento_bits) < max_range_size)
@@ -236,6 +236,14 @@ inline bool adapt_qf(QF  *qf, const value_type left, const value_type right) {
   return false;
 }
 
+inline void add_metadata(QF *f) {
+  test_out.add_measure("q_bits", f->metadata->quotient_bits);
+  test_out.add_measure("r_bits", f->metadata->key_remainder_bits);
+  test_out.add_measure("m_bits", f->metadata->value_bits);
+  test_out.add_measure("n_slots", f->metadata->xnslots);
+  test_out.add_measure("noccupied_slots", f->metadata->noccupied_slots);
+}
+
 template <typename value_type>
 inline bool query_qf(QF *qf, const value_type left, const value_type right)
 {
@@ -272,12 +280,19 @@ int main(int argc, char const *argv[])
     }
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
     std::cout<<keys.size()<<" "<<queries.size()<<std::endl;
-    auto test_type = parser.get<std::string>("--test_type");
+    auto test_type = parser.get<std::string>("--test-type");
 
     if (test_type == "adaptivity") {
-      experiment_adaptivity(pass_fun(init_qf), pass_ref(query_qf), pass_ref(adapt_qf),
-                pass_ref(size_qf), arg, keys, queries, queries);
+      auto [ keys, queries, arg ] = read_parser_arguments(parser);
+      experiment_adaptivity(
+          pass_fun(init_qf), 
+          pass_ref(query_qf), 
+          pass_ref(adapt_qf),
+          pass_ref(size_qf), 
+          pass_ref(add_metadata), 
+          arg, keys, queries, queries);
     } else if (test_type == "adversarial") {
+        auto [ keys, queries, arg ] = read_parser_arguments(parser);
         experiment_adversarial(
           pass_fun(init_inmem_db),
           pass_ref(insert_inmem_db),
@@ -290,7 +305,25 @@ int main(int argc, char const *argv[])
           0, /* Cache Size */
           keys, 
           queries, 
-          queries
+          queries /* passed onto filter init */
+        );
+    } else if (test_type == "adaptivity_fpr") {
+        auto [ keys, queries, arg] = read_parser_arguments(parser);
+        auto fpr_queries = read_fpr_queries(parser);
+        experiment_adaptivity_fpr(
+          pass_fun(init_inmem_db),
+          pass_ref(insert_inmem_db),
+          pass_ref(query_inmem_db),
+          pass_fun(init_qf), 
+          pass_ref(query_qf), 
+          pass_ref(adapt_qf),
+          pass_ref(size_qf), 
+          arg, /* bpk */ 
+          0, /* Cache Size */
+          keys, 
+          queries, 
+          fpr_queries,
+          queries /* passed onto filter init */
         );
     } else {
       std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;

@@ -155,5 +155,5 @@ if (ALL_RENCODER AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)
     target_compile_options(bench_rencoder_ss PRIVATE -mcmodel=medium -mavx512f -O2)
 endif()
 
-add_executable(workload_gen workload_gen.cpp)
+add_executable(workload_gen workload_gen.cpp zipf.c)
 target_link_libraries(workload_gen argparse)

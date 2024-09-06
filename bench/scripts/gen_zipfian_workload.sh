@@ -7,7 +7,7 @@ if [[ $1 == "small" ]]; then
 N_ELEMS=2000000 # 2 Million
 Q_UNIVERSE_SIZE=10000000 # 40 Million
 N_QUERY=100000 # 0.1 Million
-WORKLOAD_PATH=$2/workload_adaptivity_small
+WORKLOAD_PATH=$2/adaptivity_small
 fi
 
 if [[ $1 == "medium" ]]; then
@@ -15,7 +15,7 @@ if [[ $1 == "medium" ]]; then
 N_ELEMS=20000000 # 20 Million
 Q_UNIVERSE_SIZE=10000000 # 40 Million
 N_QUERY=1000000 # 10 Million
-WORKLOAD_PATH=$2/workload_adaptivity_medium
+WORKLOAD_PATH=$2/adaptivity_medium
 fi
 
 if [[ $1 == "large" ]]; then
@@ -23,7 +23,7 @@ if [[ $1 == "large" ]]; then
 N_ELEMS=200000000 # 200 Million
 Q_UNIVERSE_SIZE=10000000 # 4 Billion
 N_QUERY=10000000 # 10 Million
-WORKLOAD_PATH=$2/workload_adaptivity
+WORKLOAD_PATH=$2/adaptivity
 fi
 
 echo $N_ELEMS $UNIVERSE_SIZE $N_QUERY

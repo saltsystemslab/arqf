@@ -202,6 +202,7 @@ read_workload_from_file(const std::string &l_keys, KeyType max_range, InputKeys<
 
 class TestOutput {
     std::map<std::string, std::string> test_values;
+    std::map<std::string, std::vector< std::pair<double, double> > > intrabench_values;
 
 public:
     template<typename TestValueType>
@@ -215,6 +216,10 @@ public:
 
     inline void add_measure(const std::string &key, const std::string &value) {
         test_values[key] = value;
+    }
+
+    inline void add_intrabench_measure(const std::string &key, const double x, const double y) {
+        intrabench_values[key].push_back(std::pair<double, double>(x, y));
     }
 
     inline void print() const {
@@ -249,4 +254,30 @@ public:
         return s;
     }
 
+    std::string intrabench_measures_to_json() {
+        int measure_count = 0;
+        std::string s = "{\n";
+        for (auto it = intrabench_values.begin(); it != intrabench_values.end(); ++it) {
+          if (measure_count) {
+            s = s +",\n";
+          }
+          s = s + "\"" + it->first + "\": [\n";
+          int point_count = 0;
+          for (auto point : it->second) {
+            if (point_count) s = s + ",\n";
+            double x = point.first;
+            double y = point.second;
+            s = s + "{\"x\": ";
+            s = s + std::to_string(x);
+            s = s + ", \"y\": "; 
+            s = s + std::to_string(y);
+            s = s + "}";
+            point_count++;
+          }
+          measure_count++;
+          s = s + "]";
+        }
+        s = s + "}\n";
+        return s;
+    }
 };

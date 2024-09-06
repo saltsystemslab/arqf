@@ -61,7 +61,9 @@ auto test_out = TestOutput();
 
 auto test_verbose = true;
 bool print_csv = false;
+bool print_json = false;
 std::string csv_file = "";
+std::string json_file = "";
 
 template <typename InitFun, typename RangeFun, typename SizeFun, typename key_type, typename... Args>
 void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double param, InputKeys<key_type> &keys, Workload<key_type> &queries, Args... args)
@@ -95,16 +97,26 @@ void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double p
     test_out.add_measure("n_keys", keys.size());
     test_out.add_measure("n_queries", queries.size());
     test_out.add_measure("false_positives", fp);
+    metadata_f(f, test_out);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
-template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename key_type, typename... Args>
-void experiment_adaptivity(InitFun init_f, RangeFun range_f, AdaptFun adapt_f, SizeFun size_f, const double param, InputKeys<key_type> &keys, Workload<key_type> &queries, Args... args)
+template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+void experiment_adaptivity(
+    InitFun init_f, 
+    RangeFun range_f, 
+    AdaptFun adapt_f, 
+    SizeFun size_f, 
+    MetadataFun metadata_f, 
+    const double param, 
+    InputKeys<key_type> &keys, 
+    Workload<key_type> &queries, 
+    Args... args)
 {
     auto f = init_f(keys.begin(), keys.end(), param, args...);
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
-    auto fp = 0, fn = 0;
+    auto fp = 0, fn = 0, fa = 0;
     start_timer(query_time);
     for (auto q : queries)
     {
@@ -112,11 +124,17 @@ void experiment_adaptivity(InitFun init_f, RangeFun range_f, AdaptFun adapt_f, S
 
         bool query_result = range_f(f, left, right);
         if (query_result && !original_result) {
-            adapt_f(f, left, right);
-            query_result = range_f(f, left, right);
-            if (query_result) {
-              std::cerr << "[!] alert, adapting " <<left<<" "<<right<<" failed!" << std::endl;
+            if (!adapt_f(f, left, right)) {
+              fa++;
             }
+#if DEBUG
+            else {
+              query_result = range_f(f, left, right);
+              if (query_result) {
+                std::cerr << "[!] alert, adapting " <<left<<" "<<right<<" failed!" << std::endl;
+              }
+            }
+#endif
             fp++;
         }
         else if (!query_result && original_result)
@@ -135,7 +153,91 @@ void experiment_adaptivity(InitFun init_f, RangeFun range_f, AdaptFun adapt_f, S
     test_out.add_measure("n_keys", keys.size());
     test_out.add_measure("n_queries", queries.size());
     test_out.add_measure("false_positives", fp);
+    metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+}
+
+template <
+  typename DbInitFun, typename DbInsertFun, typename DbQueryFun,
+  typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, 
+  typename key_type, typename... Args>
+void experiment_adaptivity_fpr(
+    DbInitFun db_init,
+    DbInsertFun db_insert,
+    DbQueryFun db_query,
+    InitFun init_f,
+    RangeFun range_f,
+    AdaptFun adapt_f,
+    SizeFun size_f,
+    const double param,
+    const double db_cache_size,
+    InputKeys<key_type>& keys,
+    Workload<key_type>& queries,
+    Workload<key_type>& fpr_queries,
+    Args... args)
+{
+
+  auto f = init_f(keys.begin(), keys.end(), param, args...);
+  std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+  auto db = db_init(db_cache_size);
+
+  for (auto key : keys) {
+    db_insert(db, key);
+  }
+  std::cout << "[+] Finished loading DB, starting queries " << std::endl;
+
+  auto fp = 0, fn = 0;
+  auto instant_fpr_freq = queries.size() / 100; // Computer instantaneous FPR every 1% of queries.
+  for (uint64_t i=0; i < queries.size(); i++) {
+    auto q = queries[i];
+    const auto [left, right, original_result] = q;
+    bool query_result = range_f(f, left, right);
+
+    if (query_result) {
+      bool actual_result = db_query(db, left, right);
+      if (!actual_result) {
+        fp++;
+        adapt_f(f, left, right);
+      }
+    }
+    // TODO: Check for false negatives.
+
+    // Calculate instant false positive rate at this point.
+    if (i % instant_fpr_freq == 0) {
+      uint64_t false_positive_results = 0;
+      uint64_t total_positive_results = 0;
+      for (uint64_t j=0; j < fpr_queries.size(); j++) {
+        auto fpr_query = fpr_queries[j];
+        const auto [fpr_left, fpr_right, fpr_original_result] = q;
+        bool fpr_query_result = range_f(f, left, right);
+        if (fpr_query_result) {
+          total_positive_results++;
+        }
+        if (!fpr_original_result && fpr_query_result) {
+          false_positive_results++;
+        }
+        if (fpr_original_result && !fpr_query_result) {
+          std::cerr << "[!] alert, found false negative!" << std::endl;
+          fn++;
+        }
+      }
+      if (total_positive_results == 0) {
+        test_out.add_intrabench_measure("fpr", i, 0.0);
+      } else {
+        test_out.add_intrabench_measure("fpr", i, (1.0 * false_positive_results)/total_positive_results);
+      }
+    }
+  }
+
+  auto size = size_f(f);
+  test_out.add_measure("size", size);
+  test_out.add_measure("bpk", TO_BPK(size, keys.size()));
+  test_out.add_measure("fpr", ((double)fp / queries.size()));
+  test_out.add_measure("false_neg", fn);
+  test_out.add_measure("n_keys", keys.size());
+  test_out.add_measure("n_queries", queries.size());
+  test_out.add_measure("false_positives", fp);
+  std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
 template <
@@ -252,6 +354,10 @@ argparse::ArgumentParser init_parser(const std::string &name)
             .help("pass the workload from file")
             .nargs(2, 3);
 
+    parser.add_argument("-f", "--fpr_workload")
+            .help("pass the fpr_workload (don't adapt, just calculate fpr every 1\% of queries) from this file")
+            .nargs(2, 3);
+
     parser.add_argument("-k", "--keys")
             .help("pass the keys from file")
             .nargs(1);
@@ -260,13 +366,17 @@ argparse::ArgumentParser init_parser(const std::string &name)
             .help("prints the output in csv")
             .nargs(1);
 
+    parser.add_argument("--json")
+            .help("prints the intrabench measures in json")
+            .nargs(1);
+
     parser.add_argument("--max-queries")
             .help("limits the maximum number of queries")
             .nargs(1)
             .scan<'i', int>();
 
-    // TODO(chesetti): There is a way to set allowed values.
-    parser.add_argument("--test_type")
+    // TODO(chesetti): Is there a way to set what are allowed values?
+    parser.add_argument("--test-type")
         .help("one of adaptivity, adversial")
         .default_value("adaptivity")
         .nargs(1);
@@ -319,6 +429,11 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
         print_csv = true;
         csv_file = *arg_csv;
     }
+    if (auto arg_json = parser.present<std::string>("--json"))
+    {
+        print_json = true;
+        json_file = *arg_json;
+    }
 
     std::mt19937 shuffle_gen(query_shuffle_seed);
     std::shuffle(queries.begin(), queries.end(), shuffle_gen);
@@ -326,6 +441,21 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     std::cout << "[+] nkeys=" << keys.size() << ", nqueries=" << queries.size() << std::endl;
     std::cout << "[+] keys and queries loaded, starting test." << std::endl;
     return std::make_tuple(keys, queries, arg);
+}
+
+Workload<uint64_t> read_fpr_queries(argparse::ArgumentParser &parser) {
+  Workload<uint64_t> queries;
+  auto files = parser.get<std::vector<std::string>>("fpr_workload");
+  auto left_q = read_data_binary<uint64_t>(files[0], false);
+  auto right_q = read_data_binary<uint64_t>(files[1], false);
+  if (files.size() == 3) {
+    auto res_q = read_data_binary<int>(files[2], false);
+    for (auto i = 0; i < left_q.size(); i++)
+      queries.emplace_back(left_q[i], right_q[i], res_q[i]);
+  } else
+    for (auto i = 0; i < left_q.size(); i++)
+      queries.emplace_back(left_q[i], right_q[i], false);
+  return queries;
 }
 
 void print_test()
@@ -340,6 +470,15 @@ void print_test()
         std::string s = (!std::filesystem::exists(path_csv) || std::filesystem::is_empty(path_csv))
                 ? test_out.to_csv(true) : test_out.to_csv(false);
         std::ofstream outFile(path_csv, std::ios::app);
+        outFile << s;
+        outFile.close();
+    }
+    if (print_json)
+    {
+        std::cout << "[+] writing intrabench_measures in " << json_file << std::endl;
+        std::filesystem::path path_json(json_file);
+        std::string s = test_out.intrabench_measures_to_json();
+        std::ofstream outFile(path_json);
         outFile << s;
         outFile.close();
     }
