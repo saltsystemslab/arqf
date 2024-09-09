@@ -24,6 +24,7 @@
 #include "bigint.hpp"
 #include <wiredtiger.h>
 
+static uint64_t optimizer_hack = 0;
 const int default_key_len = 8, default_val_len = 504;
 uint64_t key_len, val_len;
 uint64_t default_buffer_pool_size_mb = 64;
@@ -36,6 +37,22 @@ static inline void error_check(int ret)
     exit(ret);
   }
 }
+
+static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, SimpleBigInt &r)
+{
+    error_check(cursor->reset(cursor));
+    cursor->set_key(cursor, (char *) l.num);
+    error_check(cursor->bound(cursor, "action=set,bound=lower,inclusive=true"));
+    cursor->set_key(cursor, (char *) r.num);
+    error_check(cursor->bound(cursor, "action=set,bound=upper,inclusive=true"));
+
+    uint32_t x = 1;
+    while ((cursor->next(cursor)) == 0) {
+        x ^= 1;
+    }
+    optimizer_hack += x;
+}
+
 
 inline std::set<uint64_t> *init_inmem_db(double db_cache_size) {
   std::set<uint64_t> *s = new std::set<uint64_t>();
@@ -236,11 +253,17 @@ void experiment_adaptivity_disk(
     {
         const auto [left, right, original_result] = q;
 
-        bool query_result = range_f(f, left, right);
+
+				bool query_result = range_f(f, left, right);
         if (query_result) {
-            // TODO: Query DB. If not found, adapt.
-            if (!adapt_f(f, left, right)) {
-              fa++;
+					big_int_l = left;
+					big_int_r = right;
+					fetch_range_from_db(cursor, big_int_l, big_int_r);
+					fp += !original_result;
+
+					// TODO: Query DB. If not found, adapt.
+					if (!adapt_f(f, left, right)) {
+						fa++;
             }
             fp++;
         }
