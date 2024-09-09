@@ -26,6 +26,7 @@
 
 const int default_key_len = 8, default_val_len = 504;
 uint64_t key_len, val_len;
+uint64_t default_buffer_pool_size_mb = 64;
 uint64_t buffer_pool_size_mb = 0;
 
 static inline void error_check(int ret)
@@ -280,6 +281,8 @@ argparse::ArgumentParser init_parser(const std::string &name)
         .help("size of WiredTiger's buffer pool, in MB")
         .nargs(1)
         .required()
+        .scan<'u', uint64_t>()
+        .required()
         .default_value(64);
 
     parser.add_argument("-f", "--fpr_workload")
@@ -303,25 +306,25 @@ argparse::ArgumentParser init_parser(const std::string &name)
             .nargs(1)
             .scan<'i', int>();
 
-    // TODO(chesetti): Is there a way to set what are allowed values?
+    // TODO(chesetti): Is there a way to set and read default values?
     parser.add_argument("--test-type")
-        .help("one of adaptivity, adversial")
-        .default_value("adaptivity")
+        .help("one of adaptivity_inmem, adaptivity_disk")
+        .default_value("adaptivity_disk")
         .nargs(1);
 
     parser.add_argument("--key_len")
         .help("length of WiredTiger's keys, in bytes")
         .nargs(1)
-        .scan<'i', int>()
-        .required()
-        .default_value(default_key_len);
+        .scan<'u', uint64_t>()
+        .default_value(default_key_len)
+        .required();
 
     parser.add_argument("--val_len")
         .help("length of WiredTiger's values, in bytes")
         .nargs(1)
-        .scan<'i', int>()
-        .required()
-        .default_value(default_val_len);
+        .scan<'u', uint64_t>()
+        .default_value(default_val_len)
+        .required();
 
     return parser;
 }
@@ -335,9 +338,12 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
                                                     : read_data_binary<uint64_t>(keys_filename);
     auto files = parser.get<std::vector<std::string>>("workload");
 
-    key_len = parser.get<uint64_t>("key_len");
-    val_len = parser.get<uint64_t>("val_len");
-    buffer_pool_size_mb = parser.get<uint64_t>("buffer_pool_size");
+    auto test_type = parser.get<std::string>("--test-type");
+    if (test_type == "adaptivity_disk") {
+      key_len = parser.get<uint64_t>("--key_len");
+      val_len = parser.get<uint64_t>("--val_len");
+      buffer_pool_size_mb = parser.get<uint64_t>("--buffer_pool_size");
+    }
 
     Workload<uint64_t> queries;
     if (has_suffix(files[0], ".txt"))

@@ -16,11 +16,11 @@ if [[ $1 == "large" ]]; then
 WORKLOAD_DIR=$2/adaptivity/kuniform
 fi
 
-if [[ $2 == "inmem" ]]; then
+if [[ $3 == "inmem" ]]; then
   TEST_TYPE=adaptivity_inmem
 fi
 
-if [[ $2 == "disk" ]]; then
+if [[ $3 == "disk" ]]; then
   TEST_TYPE=adaptivity_disk
 fi
 
