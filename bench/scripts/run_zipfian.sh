@@ -32,18 +32,18 @@ do
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${dir}left ${dir}right ${dir}result \
     --csv ${dir}memento_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE}
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size 64
 
   ${BIN_DIR}/bench/bench_arqf $bpk \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${dir}left ${dir}right ${dir}result \
     --csv ${dir}arqf_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE}
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size 64
 
   ${BIN_DIR}/bench/bench_adaptive_arqf_inmem $bpk \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${dir}left ${dir}right ${dir}result \
     --csv ${dir}adaptive_arqf_${TEST_TYPE}.csv \
-    --test-type adaptivity_inmem
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size 64
 done
 done
