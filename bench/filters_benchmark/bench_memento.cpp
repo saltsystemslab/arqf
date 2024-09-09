@@ -240,7 +240,7 @@ void run_test(
           queries, 
           queries);
     } else if (test_type == "adaptivity_disk") {
-      experiment_adaptivity(
+      experiment_adaptivity_disk(
           init_f, 
           range_f, 
           adapt_f,
