@@ -40,7 +40,9 @@ function(compile_bench ds)
         return()
     endif()
     add_executable(bench_${ds} filters_benchmark/bench_${ds}.cpp)
-    target_link_libraries(bench_${ds} argparse)
+
+    target_include_directories(bench_${ds} PUBLIC /home/chesetti/local/include)
+    target_link_libraries(bench_${ds} argparse ${WIREDTIGER_LIB})
 
     if (ds MATCHES "memento")
         add_library(mementolib STATIC ./filters/Memento/src/memento.c ./filters/Memento/src/hashutil.c)
@@ -137,6 +139,8 @@ function(compile_bench ds)
         target_compile_options(bench_rencoder PRIVATE -mcmodel=medium -mavx512f -O2)
     endif()
 endfunction(compile_bench)
+
+find_library(WIREDTIGER_LIB NAMES wiredtiger libwiredtiger PATHS /home/chesetti/local/lib)
 
 foreach(ds ${Targets})
     compile_bench(${ds})

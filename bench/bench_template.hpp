@@ -21,6 +21,20 @@
 #include <iostream>
 #include <argparse/argparse.hpp>
 #include "bench_utils.hpp"
+#include "bigint.hpp"
+#include <wiredtiger.h>
+
+const int default_key_len = 8, default_val_len = 504;
+uint64_t key_len, val_len;
+uint64_t buffer_pool_size_mb = 0;
+
+static inline void error_check(int ret)
+{
+  if (ret != 0) {
+    std::cerr << "WiredTiger Error: " << wiredtiger_strerror(ret) << std::endl;
+    exit(ret);
+  }
+}
 
 inline std::set<uint64_t> *init_inmem_db(double db_cache_size) {
   std::set<uint64_t> *s = new std::set<uint64_t>();
@@ -39,6 +53,13 @@ inline bool query_inmem_db(std::set<uint64_t> *s, const value_type left, const v
     return false;
   }
   return true;
+}
+
+static inline void insert_kv(WT_CURSOR* cursor, char* key, char* value)
+{
+  cursor->set_key(cursor, key);
+  cursor->set_value(cursor, value);
+  error_check(cursor->insert(cursor));
 }
 
 /**
@@ -157,190 +178,90 @@ void experiment_adaptivity(
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
-template <
-  typename DbInitFun, typename DbInsertFun, typename DbQueryFun,
-  typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, 
-  typename key_type, typename... Args>
-void experiment_adaptivity_fpr(
-    DbInitFun db_init,
-    DbInsertFun db_insert,
-    DbQueryFun db_query,
-    InitFun init_f,
-    RangeFun range_f,
-    AdaptFun adapt_f,
-    SizeFun size_f,
-    const double param,
-    const double db_cache_size,
-    InputKeys<key_type>& keys,
-    Workload<key_type>& queries,
-    Workload<key_type>& fpr_queries,
+template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+void experiment_adaptivity_disk(
+    InitFun init_f, 
+    RangeFun range_f, 
+    AdaptFun adapt_f, 
+    SizeFun size_f, 
+    MetadataFun metadata_f, 
+    const double param, 
+    InputKeys<key_type> &keys, 
+    Workload<key_type> &queries, 
     Args... args)
 {
+  // Begin loading DB.
+    const char *wt_home = "./query_db";
+    const uint32_t max_schema_len = 128;
+    const uint32_t max_conn_config_len = 128;
 
-  auto f = init_f(keys.begin(), keys.end(), param, args...);
-  std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
-  auto db = db_init(db_cache_size);
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
 
-  for (auto key : keys) {
-    db_insert(db, key);
-  }
-  std::cout << "[+] Finished loading DB, starting queries " << std::endl;
+    WT_CONNECTION *conn;
+    WT_SESSION *session;
+    WT_CURSOR *cursor;
+    char table_schema[max_schema_len];
+    char connection_config[max_conn_config_len];
+    sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
+    sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
+    printf("key_format=%lds,value_format=%lds", key_len, val_len);
+    printf("create,statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
 
-  auto fp = 0, fn = 0;
-  auto instant_fpr_freq = queries.size() / 100; // Computer instantaneous FPR every 1% of queries.
-  for (uint64_t i=0; i < queries.size(); i++) {
-    auto q = queries[i];
-    const auto [left, right, original_result] = q;
-    bool query_result = range_f(f, left, right);
+    error_check(wiredtiger_open(wt_home, NULL, connection_config, &conn));
+    error_check(conn->open_session(conn, NULL, NULL, &session));
+    error_check(session->create(session, "table:bm", table_schema));
+    error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
 
-    if (query_result) {
-      bool actual_result = db_query(db, left, right);
-      if (!actual_result) {
-        fp++;
-        adapt_f(f, left, right);
-      }
+    SimpleBigInt big_int_k(key_len), big_int_v(val_len);
+    SimpleBigInt big_int_l(key_len), big_int_r(key_len);
+
+    for (auto k : keys) {
+      big_int_k = k;
+      big_int_v.randomize();
+      insert_kv(cursor, (char *) big_int_k.num, (char *) big_int_v.num);
     }
-    // TODO: Check for false negatives.
+    // End loading DB.
 
-    // Calculate instant false positive rate at this point.
-    if (i % instant_fpr_freq == 0) {
-      uint64_t false_positive_results = 0;
-      uint64_t total_positive_results = 0;
-      for (uint64_t j=0; j < fpr_queries.size(); j++) {
-        auto fpr_query = fpr_queries[j];
-        const auto [fpr_left, fpr_right, fpr_original_result] = q;
-        bool fpr_query_result = range_f(f, left, right);
-        if (fpr_query_result) {
-          total_positive_results++;
+    std::cerr << "[+] WiredTiger (asBM) initialized" << std::endl;
+
+    auto f = init_f(keys.begin(), keys.end(), param, args...);
+
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+    auto fp = 0, fn = 0, fa = 0;
+    start_timer(query_time);
+    for (auto q : queries)
+    {
+        const auto [left, right, original_result] = q;
+
+        bool query_result = range_f(f, left, right);
+        if (query_result) {
+            // TODO: Query DB. If not found, adapt.
+            if (!adapt_f(f, left, right)) {
+              fa++;
+            }
+            fp++;
         }
-        if (!fpr_original_result && fpr_query_result) {
-          false_positive_results++;
+        else if (!query_result && original_result)
+        {
+            std::cerr << "[!] alert, found false negative!" << std::endl;
+            fn++;
         }
-        if (fpr_original_result && !fpr_query_result) {
-          std::cerr << "[!] alert, found false negative!" << std::endl;
-          fn++;
-        }
-      }
-      if (total_positive_results == 0) {
-        test_out.add_intrabench_measure("fpr", i, 0.0);
-      } else {
-        test_out.add_intrabench_measure("fpr", i, (1.0 * false_positive_results)/total_positive_results);
-      }
     }
-  }
-
-  auto size = size_f(f);
-  test_out.add_measure("size", size);
-  test_out.add_measure("bpk", TO_BPK(size, keys.size()));
-  test_out.add_measure("fpr", ((double)fp / queries.size()));
-  test_out.add_measure("false_neg", fn);
-  test_out.add_measure("n_keys", keys.size());
-  test_out.add_measure("n_queries", queries.size());
-  test_out.add_measure("false_positives", fp);
-  std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+    stop_timer(query_time);
+    auto size = size_f(f);
+    test_out.add_measure("size", size);
+    test_out.add_measure("bpk", TO_BPK(size, keys.size()));
+    test_out.add_measure("fpr", ((double)fp / queries.size()));
+    test_out.add_measure("false_neg", fn);
+    test_out.add_measure("n_keys", keys.size());
+    test_out.add_measure("n_queries", queries.size());
+    test_out.add_measure("false_positives", fp);
+    metadata_f(f);
+    std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
-template <
-  typename DbInitFun, typename DbInsertFun, typename DbQueryFun,
-  typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, 
-  typename key_type, typename... Args>
-void experiment_adversarial(
-    DbInitFun db_init,
-    DbInsertFun db_insert,
-    DbQueryFun db_query,
-    InitFun init_f,
-    RangeFun range_f,
-    AdaptFun adapt_f,
-    SizeFun size_f,
-    const double param,
-    const double db_cache_size,
-    InputKeys<key_type>& keys,
-    Workload<key_type>& queries,
-    Args... args)
-{
-
-  auto f = init_f(keys.begin(), keys.end(), param, args...);
-  std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
-
-  auto db = db_init(db_cache_size);
-
-  for (auto key : keys) {
-    db_insert(db, key);
-  }
-  std::cout << "[+] Finished loading DB, starting queries " << std::endl;
-  std::vector< std::pair<uint64_t, uint64_t> > adv_queries;
-
-
-  auto fp = 0, fn = 0;
-  start_timer(warmup_time);
-  for (auto q : queries) {
-    const auto [left, right, original_result] = q;
-    bool query_result = range_f(f, left, right);
-    if (query_result) {
-      bool actual_result = db_query(db, left, right);
-      if (!actual_result) {
-        adv_queries.push_back(std::pair<uint64_t, uint64_t>(left, right));
-        fp++;
-        adapt_f(f, left, right);
-      }
-    }
-    if (!query_result && original_result) {
-      std::cerr << "[!] alert, found false negative!" << std::endl;
-      fn++;
-    }
-  }
-  stop_timer(warmup_time);
-
-  std::cerr << "[+] collected " << adv_queries.size() << "adversarial queries"<< std::endl;
-  uint64_t count = 0;
-
-  start_timer(adv_query_time);
-  uint64_t adv_freq = 5; // 5 percent of queries will be from adversarial set..
-  uint64_t adv_i = 0;
-  uint64_t adv_fp = 0;
-  for (auto q : queries) {
-    const auto [left, right, original_result] = q;
-
-    bool query_result;
-    if (count % 100 < adv_freq) {
-      uint64_t adv_left = adv_queries[adv_i].first;
-      uint64_t adv_right = adv_queries[adv_i].second;
-      adv_i++;
-      adv_i = adv_i % adv_queries.size();
-      query_result = range_f(f, adv_left, adv_right);
-    } else {
-      query_result = range_f(f, left, right);
-    }
-
-
-    if (query_result) {
-      bool actual_result = db_query(db, left, right);
-      if (!actual_result) {
-        adv_fp++;
-      }
-    }
-    if (!query_result && original_result) {
-      std::cerr << "[!] alert, found false negative!" << std::endl;
-      fn++;
-    }
-    count++;
-  }
-  stop_timer(adv_query_time);
-
-
-
-  auto size = size_f(f);
-  test_out.add_measure("adversarial size", size);
-  test_out.add_measure("size", size);
-  test_out.add_measure("bpk", TO_BPK(size, keys.size()));
-  test_out.add_measure("fpr", ((double)fp / queries.size()));
-  test_out.add_measure("false_neg", fn);
-  test_out.add_measure("n_keys", keys.size());
-  test_out.add_measure("n_queries", queries.size());
-  test_out.add_measure("false_positives", fp);
-  test_out.add_measure("adversarial_fp", adv_fp);
-  std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
-}
 
 argparse::ArgumentParser init_parser(const std::string &name)
 {
@@ -350,9 +271,16 @@ argparse::ArgumentParser init_parser(const std::string &name)
             .help("the main parameter of the ds (typically desired bpk o #suffix bits)")
             .scan<'g', double>();
 
+
     parser.add_argument("-w", "--workload")
             .help("pass the workload from file")
             .nargs(2, 3);
+
+    parser.add_argument("-b", "--buffer_pool_size")
+        .help("size of WiredTiger's buffer pool, in MB")
+        .nargs(1)
+        .required()
+        .default_value(64);
 
     parser.add_argument("-f", "--fpr_workload")
             .help("pass the fpr_workload (don't adapt, just calculate fpr every 1\% of queries) from this file")
@@ -381,6 +309,20 @@ argparse::ArgumentParser init_parser(const std::string &name)
         .default_value("adaptivity")
         .nargs(1);
 
+    parser.add_argument("--key_len")
+        .help("length of WiredTiger's keys, in bytes")
+        .nargs(1)
+        .scan<'i', int>()
+        .required()
+        .default_value(default_key_len);
+
+    parser.add_argument("--val_len")
+        .help("length of WiredTiger's values, in bytes")
+        .nargs(1)
+        .scan<'i', int>()
+        .required()
+        .default_value(default_val_len);
+
     return parser;
 }
 
@@ -392,6 +334,10 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     auto keys = (has_suffix(keys_filename, ".txt")) ? read_keys_from_file<uint64_t>(keys_filename)
                                                     : read_data_binary<uint64_t>(keys_filename);
     auto files = parser.get<std::vector<std::string>>("workload");
+
+    key_len = parser.get<uint64_t>("key_len");
+    val_len = parser.get<uint64_t>("val_len");
+    buffer_pool_size_mb = parser.get<uint64_t>("buffer_pool_size");
 
     Workload<uint64_t> queries;
     if (has_suffix(files[0], ".txt"))

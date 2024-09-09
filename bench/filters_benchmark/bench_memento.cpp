@@ -228,7 +228,7 @@ void run_test(
 {
     auto test_type = parser.get<std::string>("--test-type");
     auto [ keys, queries, arg] = read_parser_arguments(parser);
-    if (test_type == "adaptivity") {
+    if (test_type == "adaptivity_inmem") {
       experiment_adaptivity(
           init_f, 
           range_f, 
@@ -239,38 +239,17 @@ void run_test(
           keys, 
           queries, 
           queries);
-    } else if (test_type == "adversarial") {
-        experiment_adversarial(
-          db_init,
-          db_insert,
-          db_query,
-          init_f, 
-          range_f,
-          adapt_f,
-          size_f, 
-          arg,
-          0, /* Cache Size */
-          keys, 
-          queries,
-          queries /* passed onto filter and DB init */
-        );
-    } else if (test_type == "adaptivity_fpr") {
-        auto fpr_queries = read_fpr_queries(parser);
-        experiment_adaptivity_fpr(
-          db_init,
-          db_insert,
-          db_query,
+    } else if (test_type == "adaptivity_disk") {
+      experiment_adaptivity(
           init_f, 
           range_f, 
           adapt_f,
           size_f, 
-          arg, /* bpk */ 
-          0, /* Cache Size */
+          metadata_f,
+          arg, 
           keys, 
           queries, 
-          fpr_queries,
-          queries /* passed onto filter init */
-        );
+          queries);
     } else {
       std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;
       abort();

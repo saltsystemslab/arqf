@@ -105,7 +105,7 @@ inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
 #endif
     for (uint64_t i=0; i<nkeys; i++) {
       if (qf_point_query(qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 0) {
-        printf("Point query %lld failed!\n", i);
+        printf("Point query %lu failed!\n", i);
         abort();
       }
     }
@@ -282,7 +282,7 @@ int main(int argc, char const *argv[])
     std::cout<<keys.size()<<" "<<queries.size()<<std::endl;
     auto test_type = parser.get<std::string>("--test-type");
 
-    if (test_type == "adaptivity") {
+    if (test_type == "adaptivity_inmem") {
       auto [ keys, queries, arg ] = read_parser_arguments(parser);
       experiment_adaptivity(
           pass_fun(init_qf), 
@@ -291,40 +291,15 @@ int main(int argc, char const *argv[])
           pass_ref(size_qf), 
           pass_ref(add_metadata), 
           arg, keys, queries, queries);
-    } else if (test_type == "adversarial") {
-        auto [ keys, queries, arg ] = read_parser_arguments(parser);
-        experiment_adversarial(
-          pass_fun(init_inmem_db),
-          pass_ref(insert_inmem_db),
-          pass_ref(query_inmem_db),
+    } else if (test_type == "adaptivity_disk") {
+      auto [ keys, queries, arg ] = read_parser_arguments(parser);
+      experiment_adaptivity_disk(
           pass_fun(init_qf), 
           pass_ref(query_qf), 
           pass_ref(adapt_qf),
           pass_ref(size_qf), 
-          arg, 
-          0, /* Cache Size */
-          keys, 
-          queries, 
-          queries /* passed onto filter init */
-        );
-    } else if (test_type == "adaptivity_fpr") {
-        auto [ keys, queries, arg] = read_parser_arguments(parser);
-        auto fpr_queries = read_fpr_queries(parser);
-        experiment_adaptivity_fpr(
-          pass_fun(init_inmem_db),
-          pass_ref(insert_inmem_db),
-          pass_ref(query_inmem_db),
-          pass_fun(init_qf), 
-          pass_ref(query_qf), 
-          pass_ref(adapt_qf),
-          pass_ref(size_qf), 
-          arg, /* bpk */ 
-          0, /* Cache Size */
-          keys, 
-          queries, 
-          fpr_queries,
-          queries /* passed onto filter init */
-        );
+          pass_ref(add_metadata), 
+          arg, keys, queries, queries);
     } else {
       std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;
       abort();
