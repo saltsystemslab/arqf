@@ -232,9 +232,6 @@ template < typename DbInitFun, typename DbInsertFun, typename DbQueryFun,
     typename... Args>
 void run_test(
     argparse::ArgumentParser& parser,
-    DbInitFun db_init,
-    DbInsertFun db_insert,
-    DbQueryFun db_query,
     InitFun init_f,
     RangeFun range_f,
     AdaptFun adapt_f,
@@ -288,9 +285,6 @@ int main(int argc, char const *argv[])
     }
     auto test_type = parser.get<std::string>("--test-type");
     run_test(parser,
-        pass_fun(init_inmem_db),
-        pass_ref(insert_inmem_db),
-        pass_ref(query_inmem_db),
         pass_fun(init_arqf),
         pass_ref(query_arqf),
         pass_ref(adapt_arqf),

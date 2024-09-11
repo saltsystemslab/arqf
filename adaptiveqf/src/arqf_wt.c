@@ -1,4 +1,4 @@
-#include "arqf_wiredtiger.h"
+#include "arqf_wt.h"
 #include "include/bigint.hpp"
 
 static const char *wt_home = "./rhm_database_home";

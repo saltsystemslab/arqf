@@ -419,21 +419,6 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     return std::make_tuple(keys, queries, arg);
 }
 
-Workload<uint64_t> read_fpr_queries(argparse::ArgumentParser &parser) {
-  Workload<uint64_t> queries;
-  auto files = parser.get<std::vector<std::string>>("fpr_workload");
-  auto left_q = read_data_binary<uint64_t>(files[0], false);
-  auto right_q = read_data_binary<uint64_t>(files[1], false);
-  if (files.size() == 3) {
-    auto res_q = read_data_binary<int>(files[2], false);
-    for (auto i = 0; i < left_q.size(); i++)
-      queries.emplace_back(left_q[i], right_q[i], res_q[i]);
-  } else
-    for (auto i = 0; i < left_q.size(); i++)
-      queries.emplace_back(left_q[i], right_q[i], false);
-  return queries;
-}
-
 void print_test()
 {
     if (test_verbose)

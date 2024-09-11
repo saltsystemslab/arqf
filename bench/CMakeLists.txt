@@ -41,6 +41,7 @@ function(compile_bench ds)
     endif()
     add_executable(bench_${ds} filters_benchmark/bench_${ds}.cpp)
 
+    # TODO(chesetti): Add wiredtiger as a submodule and update instructions.
     target_include_directories(bench_${ds} PUBLIC /home/chesetti/local/include)
     target_link_libraries(bench_${ds} argparse ${WIREDTIGER_LIB})
 
