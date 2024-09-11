@@ -284,6 +284,7 @@ void experiment_adaptivity_disk(
     test_out.add_measure("false_positives", fp);
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+    std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
 }
 
 
