@@ -1,5 +1,5 @@
 #include "arqf_wt.h"
-#include "include/bigint.hpp"
+#include "bigint.hpp"
 
 static const char *wt_home = "./rhm_database_home";
 const uint32_t max_schema_len = 128;
@@ -46,4 +46,12 @@ int WtArqf_bulk_load(WtArqf* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint
     error_check(arqf->cursor->insert(cursor));
   }
   return 0;
+}
+
+bool WtArqf_adapt(WtArqf* arqf, uint64_t fp_key, int flags) {
+  return -1;
+}
+
+bool WtArqf_adapt_range(WtArqf* arqf, uint64_t left, uint64_t right, int flags) {
+  return -1;
 }

@@ -46,10 +46,6 @@ function(compile_bench ds)
     target_link_libraries(bench_${ds} argparse ${WIREDTIGER_LIB})
 
     if (ds MATCHES "arqf")
-      add_executable(bench_adaptive_arqf filters_benchmark/bench_adaptive_arqf.cpp)
-      target_include_directories(bench_adaptive_arqf PUBLIC /home/chesetti/local/include)
-      target_link_libraries(bench_adaptive_arqf argparse ${WIREDTIGER_LIB})
-
       add_executable(bench_adaptive_arqf_inmem filters_benchmark/bench_adaptive_arqf_inmem.cpp)
       target_include_directories(bench_adaptive_arqf_inmem PUBLIC /home/chesetti/local/include)
       target_link_libraries(bench_adaptive_arqf_inmem argparse ${WIREDTIGER_LIB})
@@ -93,14 +89,11 @@ function(compile_bench ds)
       target_link_libraries(bench_arqf arqflib)
       target_compile_definitions(bench_arqf PRIVATE -DARQF_BULK_LOAD=1)
 
-      target_link_libraries(bench_adaptive_arqf arqflib) 
-      target_compile_options(bench_adaptive_arqf INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
-
       target_link_libraries(bench_adaptive_arqf_inmem arqflib) 
       target_compile_options(bench_adaptive_arqf_inmem INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 
-      target_link_libraries(bench_adaptive_arqf_inmem arqflib) 
-      target_compile_options(bench_adaptive_arqf_inmem INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+      target_link_libraries(bench_adaptive_arqf_wiredtiger arqflib) 
+      target_compile_options(bench_adaptive_arqf_wiredtiger INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
     elseif (ds MATCHES "grafite")
         add_library(grafitelib INTERFACE)
         if ("sux" IN_LIST SUCCINCT_LIBS)

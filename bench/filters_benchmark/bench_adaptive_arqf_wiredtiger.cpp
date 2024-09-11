@@ -25,8 +25,8 @@
 #include <boost/sort/sort.hpp>
 
 #include "../bench_template.hpp"
-#include "arqf_wiredtiger.h"
 #include "gqf.h"
+#include "arqf_wt.h"
 #include "gqf_int.h"
 
 /**
@@ -166,7 +166,7 @@ static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quoti
 }
 
 template <typename t_itr, typename... Args>
-inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args... args)
+inline WtArqf *init_qf(const t_itr begin, const t_itr end, const double bpk, Args... args)
 {
     auto&& t = std::forward_as_tuple(args...);
     auto queries_temp = std::get<0>(t);
@@ -202,8 +202,8 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
 
     auto key_hashes = std::vector<uint64_t>(n_items);
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-      uint64_t hash = arqf_hash(qf, x);
-      uint64_t mask  = 1ULL << (qf->metadata->quotient_bits + qf->metadata->bits_per_slot);
+      uint64_t hash = arqf_hash(qf->qf, x);
+      uint64_t mask  = 1ULL << (qf->qf->metadata->quotient_bits + qf->qf->metadata->bits_per_slot);
       return hash & (mask - 1);
     });
     auto keys = std::vector<uint64_t>(n_items);
@@ -213,14 +213,14 @@ inline QF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
     uint64_t nkeys  = key_hashes.size();
     boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
 
-    int retcode = WtArqf_bulk_load(qf, &key_hashes[0], key_hashes.size());
+    int retcode = WtArqf_bulk_load(qf, &key_hashes[0], &keys[0], key_hashes.size(), 0);
     if (retcode < 0) {
       std::cerr << "Failed to initialize iterator" << std::endl;
       abort();
     }
 
     stop_timer(build_time);
-    check_iteration_validity(arqf->qf, &key_hashes[0], nkeys);
+    check_iteration_validity(qf->qf, &key_hashes[0], nkeys);
     return qf;
 }
 
@@ -235,19 +235,19 @@ inline bool adapt_qf(WtArqf *qf, const value_type left, const value_type right) 
   return (ret == 0);
 }
 
-inline void add_metadata(QF *f) {
-  test_out.add_measure("q_bits", f->metadata->quotient_bits);
-  test_out.add_measure("r_bits", f->metadata->key_remainder_bits);
-  test_out.add_measure("m_bits", f->metadata->value_bits);
-  test_out.add_measure("n_slots", f->metadata->xnslots);
-  test_out.add_measure("noccupied_slots", f->metadata->noccupied_slots);
+inline void add_metadata(WtArqf *qf) {
+  test_out.add_measure("q_bits", qf->qf->metadata->quotient_bits);
+  test_out.add_measure("r_bits", qf->qf->metadata->key_remainder_bits);
+  test_out.add_measure("m_bits", qf->qf->metadata->value_bits);
+  test_out.add_measure("n_slots", qf->qf->metadata->xnslots);
+  test_out.add_measure("noccupied_slots", qf->qf->metadata->noccupied_slots);
 }
 
 template <typename value_type>
 inline bool query_qf(WtArqf *qf, const value_type left, const value_type right)
 {
-    uint64_t l_hash = arqf_hash(qf, left);
-    uint64_t r_hash = arqf_hash(qf, right);
+    uint64_t l_hash = arqf_hash(qf->qf, left);
+    uint64_t r_hash = arqf_hash(qf->qf, right);
 
     int result;
     if (left == right) {
