@@ -260,12 +260,12 @@ void experiment_adaptivity_disk(
 					big_int_r = right;
 					fetch_range_from_db(cursor, big_int_l, big_int_r);
 					fp += !original_result;
-
-					// TODO: Query DB. If not found, adapt.
-					if (!adapt_f(f, left, right)) {
-						fa++;
+          if (!original_result) {
+            if (!adapt_f(f, left, right)) {
+              fa++;
             }
             fp++;
+          }
         }
         else if (!query_result && original_result)
         {
