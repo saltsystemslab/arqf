@@ -7,6 +7,7 @@ project(arqf
 
 
 set(SPLINTERDB_PATH ./external/splinterdb/build/release/lib)
+set(CMAKE_CXX_STANDARD 17)
 get_filename_component(SPLINTERDB_FULL_PATH ${SPLINTERDB_PATH} ABSOLUTE)
 
 message(STATUS "SPLINTERDB LIB: ${SPLINTERDB_FULL_PATH}")

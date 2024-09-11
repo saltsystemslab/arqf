@@ -24,6 +24,7 @@
 #include <iterator>
 #include <boost/sort/sort.hpp>
 
+#include "arqf_wt.h"
 #include "../bench_template.hpp"
 #include "gqf.h"
 #include "arqf_wt.h"
@@ -196,7 +197,7 @@ inline WtArqf *init_qf(const t_itr begin, const t_itr end, const double bpk, Arg
     std::cerr << "key_size="<< key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
 
     WtArqf *qf = (WtArqf *) malloc(sizeof(WtArqf));
-    WtArqf_init(qf, n_slots, key_size, memento_bits, seed);
+    WtArqf_init(qf, 128 /* Buffer pool size */, n_slots, key_size, memento_bits, seed);
 
     start_timer(build_time);
 
