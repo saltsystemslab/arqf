@@ -20,7 +20,7 @@ FetchContent_MakeAvailable(argparse)
 set(CMAKE_CXX_STANDARD 17)
 
 list(APPEND SUCCINCT_LIBS "sux" "sdsl-lite")
-list(APPEND Targets "memento" "bucketing" "grafite" "surf" "rosetta" "proteus" "snarf" "rencoder" "arqf" "adaptive_arqf" "adaptive_arqf_inmem")
+list(APPEND Targets "memento" "bucketing" "grafite" "surf" "rosetta" "proteus" "snarf" "rencoder" "arqf")
 list(APPEND x86Targets "surf" "rosetta" "proteus" "rencoder")
 
 set(CMAKE_CXX_STANDARD 17)
@@ -44,6 +44,20 @@ function(compile_bench ds)
     # TODO(chesetti): Add wiredtiger as a submodule and update instructions.
     target_include_directories(bench_${ds} PUBLIC /home/chesetti/local/include)
     target_link_libraries(bench_${ds} argparse ${WIREDTIGER_LIB})
+
+    if (ds MATCHES "arqf")
+      add_executable(bench_adaptive_arqf filters_benchmark/bench_adaptive_arqf.cpp)
+      target_include_directories(bench_adaptive_arqf PUBLIC /home/chesetti/local/include)
+      target_link_libraries(bench_adaptive_arqf argparse ${WIREDTIGER_LIB})
+
+      add_executable(bench_adaptive_arqf_inmem filters_benchmark/bench_adaptive_arqf_inmem.cpp)
+      target_include_directories(bench_adaptive_arqf_inmem PUBLIC /home/chesetti/local/include)
+      target_link_libraries(bench_adaptive_arqf_inmem argparse ${WIREDTIGER_LIB})
+
+      add_executable(bench_adaptive_arqf_wiredtiger filters_benchmark/bench_adaptive_arqf_wiredtiger.cpp)
+      target_include_directories(bench_adaptive_arqf_wiredtiger PUBLIC /home/chesetti/local/include)
+      target_link_libraries(bench_adaptive_arqf_wiredtiger argparse ${WIREDTIGER_LIB})
+    endif()
 
     if (ds MATCHES "memento")
         add_library(mementolib STATIC ./filters/Memento/src/memento.c ./filters/Memento/src/hashutil.c)
@@ -74,16 +88,17 @@ function(compile_bench ds)
         else ()
             # target_compile_definitions(bench_memento INTERFACE -DUSE_LIBRARY_STL)
         endif ()
-    elseif (ds MATCHES "^arqf$")
+    elseif (ds MATCHES "arqf")
       message("Compiling ${ds}")
       target_link_libraries(bench_arqf arqflib)
       target_compile_definitions(bench_arqf PRIVATE -DARQF_BULK_LOAD=1)
-    elseif (ds MATCHES "^adaptive_arqf$")
-      message("Compiling ${ds}")
+
       target_link_libraries(bench_adaptive_arqf arqflib) 
       target_compile_options(bench_adaptive_arqf INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
-    elseif (ds MATCHES "^adaptive_arqf_inmem$")
-      message("Compiling ${ds}")
+
+      target_link_libraries(bench_adaptive_arqf_inmem arqflib) 
+      target_compile_options(bench_adaptive_arqf_inmem INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+
       target_link_libraries(bench_adaptive_arqf_inmem arqflib) 
       target_compile_options(bench_adaptive_arqf_inmem INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
     elseif (ds MATCHES "grafite")
