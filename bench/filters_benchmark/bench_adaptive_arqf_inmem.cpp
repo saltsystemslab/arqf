@@ -16,19 +16,18 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-
 #include <algorithm>
+#include <boost/sort/sort.hpp>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <iterator>
-#include <boost/sort/sort.hpp>
 
-#include "splinter_util.h"
-#include "arqf_inmem.hpp"
 #include "../bench_template.hpp"
+#include "arqf_inmem.hpp"
 #include "gqf.h"
 #include "gqf_int.h"
+#include "splinter_util.h"
 
 #define GET_KEY_HASH(flag) (flag & QF_KEY_IS_HASH)
 #define QF_KEY_IS_HASH (0x08)
@@ -40,79 +39,97 @@
  * This file contains the benchmark for Memento filter.
  */
 
-inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
+inline void check_iteration_validity(QF* qf, uint64_t* hashes, uint64_t nkeys)
 {
   printf("Running sanity\n");
-    for (uint64_t i=0; i<nkeys; i++) {
-      if (qf_point_query(qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 0) {
-        printf("Point query %lld failed!\n", i);
-        abort();
-      }
+  for (uint64_t i = 0; i < nkeys; i++) {
+    if (qf_point_query(qf, hashes[i], QF_KEY_IS_HASH | QF_NO_LOCK) == 0) {
+      printf("Point query %lld failed!\n", i);
+      abort();
     }
+  }
 
-    for (uint64_t i=1; i<nkeys; i++) {
-      uint64_t k = (hashes[i] + hashes[i-1]) >> 1;
-      if (k == hashes[i] || k == hashes[i-1]) continue;
-      if (qf_point_query(qf, k, QF_KEY_IS_HASH | QF_NO_LOCK) == 1) {
-        abort();
-      }
+  for (uint64_t i = 1; i < nkeys; i++) {
+    uint64_t k = (hashes[i] + hashes[i - 1]) >> 1;
+    if (k == hashes[i] || k == hashes[i - 1])
+      continue;
+    if (qf_point_query(qf, k, QF_KEY_IS_HASH | QF_NO_LOCK) == 1) {
+      abort();
     }
+  }
   printf("sanity passed\n");
 }
 
-inline uint64_t MurmurHash64A(const void * key, int len, unsigned int seed)
+inline uint64_t MurmurHash64A(const void* key, int len, unsigned int seed)
 {
-	const uint64_t m = 0xc6a4a7935bd1e995;
-	const int r = 47;
+  const uint64_t m = 0xc6a4a7935bd1e995;
+  const int r = 47;
 
-	uint64_t h = seed ^ (len * m);
+  uint64_t h = seed ^ (len * m);
 
-	const uint64_t * data = (const uint64_t *)key;
-	const uint64_t * end = data + (len/8);
+  const uint64_t* data = (const uint64_t*)key;
+  const uint64_t* end = data + (len / 8);
 
-	while(data != end) {
-		uint64_t k = *data++;
+  while (data != end) {
+    uint64_t k = *data++;
 
-		k *= m;
-		k ^= k >> r;
-		k *= m;
+    k *= m;
+    k ^= k >> r;
+    k *= m;
 
-		h ^= k;
-		h *= m;
-	}
+    h ^= k;
+    h *= m;
+  }
 
-	const unsigned char * data2 = (const unsigned char*)data;
+  const unsigned char* data2 = (const unsigned char*)data;
 
-	switch(len & 7) {
-		case 7: h ^= (uint64_t)data2[6] << 48; do {} while (0);  /* fallthrough */
-		case 6: h ^= (uint64_t)data2[5] << 40; do {} while (0);  /* fallthrough */
-		case 5: h ^= (uint64_t)data2[4] << 32; do {} while (0);  /* fallthrough */
-		case 4: h ^= (uint64_t)data2[3] << 24; do {} while (0);  /* fallthrough */
-		case 3: h ^= (uint64_t)data2[2] << 16; do {} while (0);  /* fallthrough */
-		case 2: h ^= (uint64_t)data2[1] << 8; do {} while (0); /* fallthrough */
-		case 1: h ^= (uint64_t)data2[0];
-						h *= m;
-	};
+  switch (len & 7) {
+  case 7:
+    h ^= (uint64_t)data2[6] << 48;
+    do {
+    } while (0); /* fallthrough */
+  case 6:
+    h ^= (uint64_t)data2[5] << 40;
+    do {
+    } while (0); /* fallthrough */
+  case 5:
+    h ^= (uint64_t)data2[4] << 32;
+    do {
+    } while (0); /* fallthrough */
+  case 4:
+    h ^= (uint64_t)data2[3] << 24;
+    do {
+    } while (0); /* fallthrough */
+  case 3:
+    h ^= (uint64_t)data2[2] << 16;
+    do {
+    } while (0); /* fallthrough */
+  case 2:
+    h ^= (uint64_t)data2[1] << 8;
+    do {
+    } while (0); /* fallthrough */
+  case 1:
+    h ^= (uint64_t)data2[0];
+    h *= m;
+  };
 
-	h ^= h >> r;
-	h *= m;
-	h ^= h >> r;
+  h ^= h >> r;
+  h *= m;
+  h ^= h >> r;
 
-	return h;
+  return h;
 }
 
-__attribute__((always_inline))
-static inline uint32_t fast_reduce(uint32_t hash, uint32_t n) {
-    // http://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
-    return (uint32_t) (((uint64_t) hash * n) >> 32);
+__attribute__((always_inline)) static inline uint32_t fast_reduce(uint32_t hash, uint32_t n)
+{
+  // http://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+  return (uint32_t)(((uint64_t)hash * n) >> 32);
 }
-
-
 
 static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
 {
   const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
-  const uint64_t memento_mask =  (1ULL << memento_bits) - 1;
+  const uint64_t memento_mask = (1ULL << memento_bits) - 1;
   const uint64_t hash_mask = (1ULL << (quotient_bits + remainder_bits)) - 1;
   auto y = x >> memento_bits;
   uint64_t hash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
@@ -123,86 +140,86 @@ static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quoti
 }
 
 template <typename t_itr, typename... Args>
-inline InMemArqf *init_arqf(const t_itr begin, const t_itr end, const double bpk, Args... args)
+inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk, Args... args)
 {
-    auto&& t = std::forward_as_tuple(args...);
-    auto queries_temp = std::get<0>(t);
-    auto query_lengths = std::vector<uint64_t>(queries_temp.size());
-    std::transform(queries_temp.begin(), queries_temp.end(), query_lengths.begin(), [](auto x) {
-        auto [left, right, result] = x;
-        return right - left + 1;
-    });
-    const uint64_t n_items = std::distance(begin, end);
-    //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
-    const uint64_t seed = 1380;
-    const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-    const double load_factor = 0.90;
-    const uint64_t n_slots = n_items / load_factor + std::sqrt(n_items);
-    uint32_t memento_bits = 1;
-    while ((1ULL << memento_bits) < max_range_size)
-        memento_bits++;
-    memento_bits = memento_bits < 2 ? 2 : memento_bits;
-    const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 2.125);
-    if (bpk * load_factor - memento_bits - 2.125 < 0) {
-        abort();
-    }
-    uint32_t key_size = 0;
-    while ((1ULL << key_size) < n_slots)
-        key_size++;
-    key_size += fingerprint_size;
-    std::cerr << "key_size="<< key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
+  auto&& t = std::forward_as_tuple(args...);
+  auto queries_temp = std::get<0>(t);
+  auto query_lengths = std::vector<uint64_t>(queries_temp.size());
+  std::transform(queries_temp.begin(), queries_temp.end(), query_lengths.begin(), [](auto x) {
+    auto [left, right, result] = x;
+    return right - left + 1;
+  });
+  const uint64_t n_items = std::distance(begin, end);
+  //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
+  const uint64_t seed = 1380;
+  const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
+  const double load_factor = 0.90;
+  const uint64_t n_slots = n_items / load_factor + std::sqrt(n_items);
+  uint32_t memento_bits = 1;
+  while ((1ULL << memento_bits) < max_range_size)
+    memento_bits++;
+  memento_bits = memento_bits < 2 ? 2 : memento_bits;
+  const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 2.125);
+  if (bpk * load_factor - memento_bits - 2.125 < 0) {
+    abort();
+  }
+  uint32_t key_size = 0;
+  while ((1ULL << key_size) < n_slots)
+    key_size++;
+  key_size += fingerprint_size;
+  std::cerr << "key_size=" << key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
 
-    InMemArqf *arqf  = new InMemArqf();
-    InMemArqf_init(arqf, n_slots, key_size, memento_bits, seed);
-    // qf_set_auto_resize(qf, true);
+  InMemArqf* arqf = new InMemArqf();
+  InMemArqf_init(arqf, n_slots, key_size, memento_bits, seed);
+  // qf_set_auto_resize(qf, true);
 
-    start_timer(build_time);
+  start_timer(build_time);
 
-    auto key_hashes = std::vector<uint64_t>(n_items);
-    std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-      uint64_t hash = arqf_hash(arqf->qf, x);
-      uint64_t mask  = 1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot);
-      return hash & (mask - 1);
-    });
-    auto keys = std::vector<uint64_t>(n_items);
-    std::transform(begin, end, keys.begin(), [&](auto x) {
-        return x;
-    });
+  auto key_hashes = std::vector<uint64_t>(n_items);
+  std::transform(begin, end, key_hashes.begin(), [&](auto x) {
+    uint64_t hash = arqf_hash(arqf->qf, x);
+    uint64_t mask = 1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot);
+    return hash & (mask - 1);
+  });
+  auto keys = std::vector<uint64_t>(n_items);
+  std::transform(begin, end, keys.begin(), [&](auto x) {
+    return x;
+  });
 
-    /*
+  /*
      * The following code uses the Boost library to sort the elements in a single thread, via spreadsort function.
      * This function is faster than std::sort and exploits the fact that the size of the maximum hash is bounded
      * via hybrid radix sort.
      */
-    boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
-    int retcode = InMemArqf_bulk_load(arqf, &key_hashes[0], &keys[0], key_hashes.size(), 0);
-    if (retcode < 0) {
-      std::cerr << "Failed to initialize iterator" << std::endl;
-      abort();
-    }
-    stop_timer(build_time);
-    check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
-    return arqf;
+  boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
+  int retcode = InMemArqf_bulk_load(arqf, &key_hashes[0], &keys[0], key_hashes.size(), 0);
+  if (retcode < 0) {
+    std::cerr << "Failed to initialize iterator" << std::endl;
+    abort();
+  }
+  stop_timer(build_time);
+  check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
+  return arqf;
 }
 
 template <typename value_type>
-inline bool query_arqf(InMemArqf *arqf, const value_type left, const value_type right)
+inline bool query_arqf(InMemArqf* arqf, const value_type left, const value_type right)
 {
-    QF *qf = arqf->qf;
-    uint64_t l_hash = arqf_hash(qf, left);
-    uint64_t r_hash = arqf_hash(qf, right);
+  QF* qf = arqf->qf;
+  uint64_t l_hash = arqf_hash(qf, left);
+  uint64_t r_hash = arqf_hash(qf, right);
 
-    int result;
-    if (left == right) {
-      result = qf_point_query(arqf->qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
-    } else {
-      result = qf_range_query(arqf->qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
-    }
-    return result;
+  int result;
+  if (left == right) {
+    result = qf_point_query(arqf->qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+  } else {
+    result = qf_range_query(arqf->qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+  }
+  return result;
 }
 
 template <typename value_type>
-inline bool adapt_arqf(InMemArqf *arqf, const value_type left, const value_type right)
+inline bool adapt_arqf(InMemArqf* arqf, const value_type left, const value_type right)
 {
   int ret;
   if (left == right) {
@@ -210,16 +227,17 @@ inline bool adapt_arqf(InMemArqf *arqf, const value_type left, const value_type 
   } else {
     ret = InMemArqf_adapt_range(arqf, left, right, 0);
   }
-  return (ret==0);
+  return (ret == 0);
 }
 
-inline size_t size_arqf(InMemArqf *f)
+inline size_t size_arqf(InMemArqf* f)
 {
   return qf_get_total_size_in_bytes(f->qf);
 }
 
-inline void add_metadata(InMemArqf *arqf) {
-  QF *f = arqf->qf;
+inline void add_metadata(InMemArqf* arqf)
+{
+  QF* f = arqf->qf;
   test_out.add_measure("q_bits", f->metadata->quotient_bits);
   test_out.add_measure("r_bits", f->metadata->key_remainder_bits);
   test_out.add_measure("m_bits", f->metadata->value_bits);
@@ -227,97 +245,64 @@ inline void add_metadata(InMemArqf *arqf) {
   test_out.add_measure("noccupied_slots", f->metadata->noccupied_slots);
 }
 
-template < typename DbInitFun, typename DbInsertFun, typename DbQueryFun,
+template <
     typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun,
     typename... Args>
 void run_test(
     argparse::ArgumentParser& parser,
-    DbInitFun db_init,
-    DbInsertFun db_insert,
-    DbQueryFun db_query,
     InitFun init_f,
     RangeFun range_f,
     AdaptFun adapt_f,
     SizeFun size_f,
-    MetadataFun metadata_f
-    )
+    MetadataFun metadata_f)
 {
-    auto test_type = parser.get<std::string>("--test-type");
-    auto [ keys, queries, arg] = read_parser_arguments(parser);
-    if (test_type == "adaptivity") {
-      experiment_adaptivity(
-          init_f, 
-          range_f, 
-          adapt_f,
-          size_f, 
-          metadata_f,
-          arg, 
-          keys, 
-          queries, 
-          queries);
-    } else if (test_type == "adversarial") {
-        experiment_adversarial(
-          db_init,
-          db_insert,
-          db_query,
-          init_f, 
-          range_f,
-          adapt_f,
-          size_f, 
-          arg,
-          0, /* Cache Size */
-          keys, 
-          queries,
-          queries /* passed onto filter and DB init */
-        );
-    } else if (test_type == "adaptivity_fpr") {
-        auto fpr_queries = read_fpr_queries(parser);
-        experiment_adaptivity_fpr(
-          db_init,
-          db_insert,
-          db_query,
-          init_f, 
-          range_f, 
-          adapt_f,
-          size_f, 
-          arg, /* bpk */ 
-          0, /* Cache Size */
-          keys, 
-          queries, 
-          fpr_queries,
-          queries /* passed onto filter init */
-        );
-    } else {
-      std::cerr<<"Specify which type of test to run with --test_type"<<std::endl;
-      abort();
-    }
+  auto test_type = parser.get<std::string>("--test-type");
+  auto [keys, queries, arg] = read_parser_arguments(parser);
+  if (test_type == "adaptivity_inmem") {
+    experiment_adaptivity(
+        init_f,
+        range_f,
+        adapt_f,
+        size_f,
+        metadata_f,
+        arg,
+        keys,
+        queries,
+        queries);
+  } else if (test_type == "adaptivity_disk") {
+    experiment_adaptivity_disk(
+        init_f,
+        range_f,
+        adapt_f,
+        size_f,
+        metadata_f,
+        arg,
+        keys,
+        queries,
+        queries);
+  } else {
+    std::cerr << "Specify which type of test to run with --test_type" << std::endl;
+    abort();
+  }
 }
 
-
-int main(int argc, char const *argv[])
+int main(int argc, char const* argv[])
 {
-    auto parser = init_parser("bench-adaptivity");
-    try
-    {
-        parser.parse_args(argc, argv);
-    }
-    catch (const std::runtime_error &err)
-    {
-        std::cerr << err.what() << std::endl;
-        std::cerr << parser;
-        std::exit(1);
-    }
-    auto test_type = parser.get<std::string>("--test-type");
-    run_test(parser,
-        pass_fun(init_inmem_db),
-        pass_ref(insert_inmem_db),
-        pass_ref(query_inmem_db),
-        pass_fun(init_arqf),
-        pass_ref(query_arqf),
-        pass_ref(adapt_arqf),
-        pass_ref(size_arqf),
-        pass_ref(add_metadata)
-    );
-    print_test();
-    return 0;
+  auto parser = init_parser("bench-adaptivity");
+  try {
+    parser.parse_args(argc, argv);
+  } catch (const std::runtime_error& err) {
+    std::cerr << err.what() << std::endl;
+    std::cerr << parser;
+    std::exit(1);
+  }
+  auto test_type = parser.get<std::string>("--test-type");
+  run_test(parser,
+      pass_fun(init_arqf),
+      pass_ref(query_arqf),
+      pass_ref(adapt_arqf),
+      pass_ref(size_arqf),
+      pass_ref(add_metadata));
+  print_test();
+  return 0;
 }
