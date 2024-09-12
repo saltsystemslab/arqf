@@ -45,5 +45,11 @@ do
     --workload ${dir}left ${dir}right ${dir}result \
     --csv ${dir}adaptive_arqf_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size 64
+
+  ${BIN_DIR}/bench/bench_adaptive_arqf_wiredtiger $bpk \
+    --keys ${WORKLOAD_DIR}/keys \
+    --workload ${dir}left ${dir}right ${dir}result \
+    --csv ${dir}adaptive_arqf_${TEST_TYPE}.csv \
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size 64
 done
 done
