@@ -5,24 +5,24 @@
 if [[ $1 == "small" ]]; then
   echo "SMALL"
 N_ELEMS=2000000 # 2 Million
-Q_UNIVERSE_SIZE=10000000 # 40 Million
+Q_UNIVERSE_SIZE=10000000 # 10 Million
 N_QUERY=100000 # 0.1 Million
 WORKLOAD_PATH=$2/adaptivity_small
 fi
 
 if [[ $1 == "medium" ]]; then
-  echo "SMALL"
+  echo "MEDIUM"
 N_ELEMS=20000000 # 20 Million
-Q_UNIVERSE_SIZE=10000000 # 40 Million
-N_QUERY=1000000 # 10 Million
+Q_UNIVERSE_SIZE=10000000 # 10 Million
+N_QUERY=10000000 # 10 Million
 WORKLOAD_PATH=$2/adaptivity_medium
 fi
 
 if [[ $1 == "large" ]]; then
   echo "LARGE"
 N_ELEMS=200000000 # 200 Million
-Q_UNIVERSE_SIZE=10000000 # 4 Billion
-N_QUERY=10000000 # 10 Million
+Q_UNIVERSE_SIZE=10000000 # 10 Million
+N_QUERY=100000000 # 100 Million
 WORKLOAD_PATH=$2/adaptivity
 fi
 

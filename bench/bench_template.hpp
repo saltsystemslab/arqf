@@ -93,6 +93,10 @@ static inline void insert_kv(WT_CURSOR* cursor, char* key, char* value)
     auto t_end_##t = timer::now(); \
     test_out.add_measure(#t, std::chrono::duration_cast<std::chrono::milliseconds>(t_end_##t - t_start_##t).count());
 
+#define measure_timer(t) \
+    auto t_end_##t = timer::now(); \
+    auto t_duration_##t = std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_##t - t_start_##t).count();
+
 auto query_shuffle_s = 1380;
 #define query_shuffle_seed query_shuffle_s++
 
@@ -235,36 +239,51 @@ void experiment_adaptivity_disk(
     SimpleBigInt big_int_k(key_len), big_int_v(val_len);
     SimpleBigInt big_int_l(key_len), big_int_r(key_len);
 
+    start_timer(db_load);
     for (auto k : keys) {
       big_int_k = k;
       big_int_v.randomize();
       insert_kv(cursor, (char *) big_int_k.num, (char *) big_int_v.num);
     }
+    stop_timer(db_load);
     // End loading DB.
 
-    std::cerr << "[+] WiredTiger (asBM) initialized" << std::endl;
+    std::cerr << "[+] WiredTiger initalized in " << test_out["db_load"] << "initialized" << std::endl;
 
     auto f = init_f(keys.begin(), keys.end(), param, args...);
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
     auto fp = 0, fn = 0, fa = 0;
+    uint64_t num_db_fetches = 0;
+    uint64_t num_adapts = 0;
+    uint64_t fetch_from_db_duration_ns = 0;
+    uint64_t adapt_duration_ns = 0;
+
     start_timer(query_time);
     for (auto q : queries)
+
     {
         const auto [left, right, original_result] = q;
-
 
 				bool query_result = range_f(f, left, right);
         if (query_result) {
 					big_int_l = left;
 					big_int_r = right;
+
+          start_timer(db_fetch);
+          num_db_fetches++;
 					fetch_range_from_db(cursor, big_int_l, big_int_r);
+          measure_timer(db_fetch);
+          fetch_from_db_duration_ns += t_duration_db_fetch;
+
 					fp += !original_result;
           if (!original_result) {
+            start_timer(adapt_qf);
             if (!adapt_f(f, left, right)) {
               fa++;
             }
-            fp++;
+            measure_timer(adapt_qf);
+            adapt_duration_ns += t_duration_adapt_qf;
           }
         }
         else if (!query_result && original_result)
@@ -282,6 +301,9 @@ void experiment_adaptivity_disk(
     test_out.add_measure("n_keys", keys.size());
     test_out.add_measure("n_queries", queries.size());
     test_out.add_measure("false_positives", fp);
+    test_out.add_measure("num_db_fetch", num_db_fetches);
+    test_out.add_measure("db_fetch_duration_ns", fetch_from_db_duration_ns);
+    test_out.add_measure("adapt_duration_ns", adapt_duration_ns);
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;

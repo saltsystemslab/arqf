@@ -90,10 +90,12 @@ inline uint64_t MurmurHash64A(const void * key, int len, unsigned int s)
 
 void save_keys(InputKeys<uint64_t> &keys, const std::string &file)
 {
-    if (save_binary)
+    if (save_binary) {
         write_to_binary_file(keys, file);
-    else
+    }
+    else {
         save_keys_to_file(keys, file + ".txt");
+    }
 }
 
 void save_queries(Workload<uint64_t> &work, const std::string &l_keys, const std::string &r_keys = "", const std::string &res_keys = "")

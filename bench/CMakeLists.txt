@@ -46,6 +46,10 @@ function(compile_bench ds)
     target_link_libraries(bench_${ds} argparse ${WIREDTIGER_LIB})
 
     if (ds MATCHES "arqf")
+      add_executable(bench_adaptive_arqf_splinterdb filters_benchmark/bench_adaptive_arqf_splinterdb.cpp)
+      target_include_directories(bench_adaptive_arqf_splinterdb PUBLIC /home/chesetti/local/include)
+      target_link_libraries(bench_adaptive_arqf_splinterdb argparse ${WIREDTIGER_LIB})
+
       add_executable(bench_adaptive_arqf_inmem filters_benchmark/bench_adaptive_arqf_inmem.cpp)
       target_include_directories(bench_adaptive_arqf_inmem PUBLIC /home/chesetti/local/include)
       target_link_libraries(bench_adaptive_arqf_inmem argparse ${WIREDTIGER_LIB})
@@ -94,6 +98,9 @@ function(compile_bench ds)
 
       target_link_libraries(bench_adaptive_arqf_wiredtiger arqflib) 
       target_compile_options(bench_adaptive_arqf_wiredtiger INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+
+      target_link_libraries(bench_adaptive_arqf_splinterdb arqflib) 
+      target_compile_options(bench_adaptive_arqf_splinterdb INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
     elseif (ds MATCHES "grafite")
         add_library(grafitelib INTERFACE)
         if ("sux" IN_LIST SUCCINCT_LIBS)

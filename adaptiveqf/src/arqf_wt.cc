@@ -14,6 +14,7 @@
 static const char *wt_home = "./rhm_database_home";
 const uint32_t max_schema_len = 128;
 const uint32_t max_conn_config_len = 128;
+uint64_t *new_value_buf; 
 
 static inline void error_check(int ret)
 {
@@ -37,7 +38,7 @@ int WtArqf_init(
   WT_CURSOR* cursor;
   char table_schema[max_schema_len];
   char connection_config[max_conn_config_len];
-  sprintf(table_schema, "key_format=Q,value_format=u");
+  sprintf(table_schema, "type=lsm,key_format=Q,value_format=u");
   sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", wt_buffer_pool_size_mb);
 
   if (std::filesystem::exists(wt_home))
@@ -46,8 +47,8 @@ int WtArqf_init(
 
   error_check(wiredtiger_open(wt_home, NULL, connection_config, &conn));
   error_check(conn->open_session(conn, NULL, NULL, &session));
-  error_check(session->create(session, "table:rhm", table_schema));
-  error_check(session->open_cursor(session, "table:rhm", NULL, NULL, &cursor));
+  error_check(session->create(session, "table:rhm_test", table_schema));
+  error_check(session->open_cursor(session, "table:rhm_test", NULL, NULL, &cursor));
   std::cerr << "[+] WiredTiger (as RHM) initialized" << std::endl;
   arqf->conn = conn;
   arqf->session = session;
@@ -56,28 +57,31 @@ int WtArqf_init(
 }
 
 inline void upsert_key(WT_CURSOR *cursor, uint64_t key, uint64_t value) {
-  WT_ITEM db_value;
-  char *value_buf[8];
-  memcpy(value_buf, &value, sizeof(uint64_t));
-  db_value.data = value_buf;
-  db_value.size = sizeof(uint64_t);
   
   cursor->set_key(cursor, key);
   int ret = cursor->search(cursor);
   if (ret == WT_NOTFOUND) {
+      WT_ITEM db_value;
+      char value_buf[8];
+      memcpy(value_buf, &value, sizeof(uint64_t));
+
+      db_value.data = value_buf;
+      db_value.size = sizeof(uint64_t);
+
+      cursor->reset(cursor);
       cursor->set_key(cursor, key);
       cursor->set_value(cursor, &db_value);
       error_check(cursor->insert(cursor));
   } else {
     WT_ITEM old_value;
     error_check(cursor->get_value(cursor, &old_value));
-    char *new_value_buf[old_value.size + sizeof(uint64_t)];
-    memcpy(new_value_buf, old_value.data, old_value.size);
-    memcpy(new_value_buf + old_value.size, &value, sizeof(uint64_t));
+    memcpy((char *)new_value_buf, old_value.data, old_value.size);
+    new_value_buf[old_value.size/8] = value;
 
     WT_ITEM new_value;
     new_value.data = new_value_buf;
     new_value.size = old_value.size + sizeof(uint64_t);
+    cursor->reset(cursor);
     cursor->set_key(cursor, key);
     cursor->set_value(cursor, &new_value);
     error_check(cursor->insert(cursor));
@@ -87,6 +91,7 @@ inline void upsert_key(WT_CURSOR *cursor, uint64_t key, uint64_t value) {
 
 int WtArqf_bulk_load(WtArqf* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t nkeys, int flags)
 {
+  new_value_buf = new uint64_t[10000];
   qf_bulk_load(arqf->qf, sorted_hashes, nkeys);
   const uint64_t quotient_bits = arqf->qf->metadata->quotient_bits;
   const uint64_t remainder_bits = arqf->qf->metadata->key_remainder_bits;
@@ -100,7 +105,11 @@ int WtArqf_bulk_load(WtArqf* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint
     }
     uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
     upsert_key(arqf->cursor, fingerprint, keys[i]);
+    if (i % 1000000 == 0) {
+      printf("%lu keys loaded into RHM\n", i);
+    }
   }
+  delete new_value_buf;
   return 0;
 }
 
@@ -157,7 +166,9 @@ inline int adapt_keepsake(
     uint64_t keepsake_start,
     uint64_t keepsake_end) {
 #if DEBUG 
+#if VERBOSE
    printf("Adapting hash: %016llx in keepsake[%llu %llu] containing %u keys\n", fp_hash, keepsake_start, keepsake_end, num_colliding_keys);
+#endif
   for (uint64_t i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
     assert(qf_point_query(arqf->qf, key_in_keepsake, 0) == 1);
@@ -263,6 +274,7 @@ inline int  maybe_adapt_keepsake(WtArqf *arqf, uint64_t fp_key, uint64_t fp_hash
   }
 
   WT_ITEM value;
+  arqf->cursor->reset(arqf->cursor);
   arqf->cursor->set_key(arqf->cursor, colliding_fingerprint);
   error_check(arqf->cursor->search(arqf->cursor));
   error_check(arqf->cursor->get_value(arqf->cursor, &value));
