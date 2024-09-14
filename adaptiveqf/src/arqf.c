@@ -8,12 +8,6 @@
 #define BITMASK(nbits) \
   ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
 
-__attribute__((always_inline)) static inline uint32_t fast_reduce(uint32_t hash, uint32_t n)
-{
-  // http://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
-  return (uint32_t)(((uint64_t)hash * n) >> 32);
-}
-
 int arqf_init_with_rhm(ARQF* arqf, splinterdb* rhm, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed)
 {
   QF* qf;
@@ -175,7 +169,7 @@ inline int adapt_keepsake(
         &current_keepsake_end
       );
     // TODO(chesetti): Insert new fingerprint
-    db_insert(arqf->rhm, &keepsake_fingerprint, sizeof(keepsake_fingerprint), &key_in_keepsake, sizeof(key_in_keepsake), 1, 0);
+    db_insert(arqf->rhm, &new_fingerprint_bits, sizeof(new_fingerprint_bits), &key_in_keepsake, sizeof(key_in_keepsake), 1, 0);
   }
 
 #if DEBUG
@@ -260,7 +254,6 @@ int arqf_adapt_range(ARQF *arqf, uint64_t left, uint64_t right, int flags) {
   } else {
     return -1;
   }
-  return 0;
 }
 
 int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags)
