@@ -96,6 +96,7 @@ void save_keys(InputKeys<uint64_t> &keys, const std::string &file)
     else {
         save_keys_to_file(keys, file + ".txt");
     }
+    save_keys_to_db(keys, file);
 }
 
 void save_queries(Workload<uint64_t> &work, const std::string &l_keys, const std::string &r_keys = "", const std::string &res_keys = "")

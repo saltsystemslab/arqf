@@ -270,6 +270,8 @@ void run_test(
         queries,
         queries);
   } else if (test_type == "adaptivity_disk") {
+    std::string db_home = parser.get<std::string>("keys");
+    db_home += "_wtdb";
     experiment_adaptivity_disk(
         init_f,
         range_f,
@@ -277,6 +279,7 @@ void run_test(
         size_f,
         metadata_f,
         arg,
+        db_home,
         keys,
         queries,
         queries);

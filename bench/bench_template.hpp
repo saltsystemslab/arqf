@@ -21,22 +21,12 @@
 #include <iostream>
 #include <argparse/argparse.hpp>
 #include "bench_utils.hpp"
-#include "bigint.hpp"
-#include <wiredtiger.h>
 
 static uint64_t optimizer_hack = 0;
 const int default_key_len = 8, default_val_len = 504;
 uint64_t key_len, val_len;
 uint64_t default_buffer_pool_size_mb = 64;
 uint64_t buffer_pool_size_mb = 0;
-
-static inline void error_check(int ret)
-{
-  if (ret != 0) {
-    std::cerr << "WiredTiger Error: " << wiredtiger_strerror(ret) << std::endl;
-    exit(ret);
-  }
-}
 
 static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, SimpleBigInt &r)
 {
@@ -71,13 +61,6 @@ inline bool query_inmem_db(std::set<uint64_t> *s, const value_type left, const v
     return false;
   }
   return true;
-}
-
-static inline void insert_kv(WT_CURSOR* cursor, char* key, char* value)
-{
-  cursor->set_key(cursor, key);
-  cursor->set_value(cursor, value);
-  error_check(cursor->insert(cursor));
 }
 
 /**
@@ -200,6 +183,32 @@ void experiment_adaptivity(
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
+int
+print_cursor(WT_CURSOR *cursor)
+{
+        const char *desc, *pvalue;
+        uint64_t value;
+        int ret;
+        while ((ret = cursor->next(cursor)) == 0 &&
+            (ret = cursor->get_value(cursor, &desc, &pvalue, &value)) == 0)
+                if (value != 0)
+                        printf("%s=%s\n", desc, pvalue);
+        return (ret == WT_NOTFOUND ? 0 : ret);
+}
+int 
+print_database_stats(WT_SESSION *session)
+{
+        WT_CURSOR *cursor;
+        int ret;
+        if ((ret = session->open_cursor(session,
+            "statistics:", NULL, NULL, &cursor)) != 0)
+                return (ret);
+        ret = print_cursor(cursor);
+        ret = cursor->close(cursor);
+        return (ret);
+}
+
+
 template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
 void experiment_adaptivity_disk(
     InitFun init_f, 
@@ -208,18 +217,14 @@ void experiment_adaptivity_disk(
     SizeFun size_f, 
     MetadataFun metadata_f, 
     const double param, 
+    std::string wt_home,
     InputKeys<key_type> &keys, 
     Workload<key_type> &queries, 
     Args... args)
 {
   // Begin loading DB.
-    const char *wt_home = "./query_db";
     const uint32_t max_schema_len = 128;
     const uint32_t max_conn_config_len = 128;
-
-    if (std::filesystem::exists(wt_home))
-        std::filesystem::remove_all(wt_home);
-    std::filesystem::create_directory(wt_home);
 
     WT_CONNECTION *conn;
     WT_SESSION *session;
@@ -227,28 +232,17 @@ void experiment_adaptivity_disk(
     char table_schema[max_schema_len];
     char connection_config[max_conn_config_len];
     sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
-    sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
-    printf("key_format=%lds,value_format=%lds", key_len, val_len);
-    printf("create,statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
+    sprintf(connection_config, "statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
 
-    error_check(wiredtiger_open(wt_home, NULL, connection_config, &conn));
+    error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
     error_check(conn->open_session(conn, NULL, NULL, &session));
     error_check(session->create(session, "table:bm", table_schema));
     error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
 
     SimpleBigInt big_int_k(key_len), big_int_v(val_len);
     SimpleBigInt big_int_l(key_len), big_int_r(key_len);
-
-    start_timer(db_load);
-    for (auto k : keys) {
-      big_int_k = k;
-      big_int_v.randomize();
-      insert_kv(cursor, (char *) big_int_k.num, (char *) big_int_v.num);
-    }
-    stop_timer(db_load);
-    // End loading DB.
-
-    std::cerr << "[+] WiredTiger initalized in " << test_out["db_load"] << "initialized" << std::endl;
+    
+    std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
 
     auto f = init_f(keys.begin(), keys.end(), param, args...);
 

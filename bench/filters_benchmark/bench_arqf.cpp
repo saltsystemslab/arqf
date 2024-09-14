@@ -310,6 +310,8 @@ int main(int argc, char const* argv[])
         pass_ref(add_metadata),
         arg, keys, queries, queries);
   } else if (test_type == "adaptivity_disk") {
+    std::string db_home = parser.get<std::string>("keys");
+    db_home += "_wtdb";
     auto [keys, queries, arg] = read_parser_arguments(parser);
     experiment_adaptivity_disk(
         pass_fun(init_qf),
@@ -317,7 +319,7 @@ int main(int argc, char const* argv[])
         pass_ref(adapt_qf),
         pass_ref(size_qf),
         pass_ref(add_metadata),
-        arg, keys, queries, queries);
+        arg, db_home, keys, queries, queries);
   } else {
     std::cerr << "Specify which type of test to run with --test_type" << std::endl;
     abort();

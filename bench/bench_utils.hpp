@@ -28,6 +28,8 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <wiredtiger.h>
+#include "bigint.hpp"
 
 /**
  * This file contains some utility functions and data structures used in the benchmarks.
@@ -150,6 +152,21 @@ static void save_workload_to_file(Workload<KeyType> &work, const std::string &l_
     outFile_l.close();
 }
 
+static inline void error_check(int ret)
+{
+  if (ret != 0) {
+    std::cerr << "WiredTiger Error: " << wiredtiger_strerror(ret) << std::endl;
+    exit(ret);
+  }
+}
+
+static inline void insert_kv(WT_CURSOR* cursor, char* key, char* value)
+{
+  cursor->set_key(cursor, key);
+  cursor->set_value(cursor, value);
+  error_check(cursor->insert(cursor));
+}
+
 template<typename KeyType>
 static void save_keys_to_file(InputKeys<KeyType> &keys, const std::string &file) {
     std::ofstream outFile(file, std::ios::trunc);
@@ -159,6 +176,43 @@ static void save_keys_to_file(InputKeys<KeyType> &keys, const std::string &file)
     }
 
     outFile.close();
+}
+
+template<typename KeyType>
+static void save_keys_to_db(InputKeys<KeyType> &keys, const std::string &file) {
+
+    std::cout<<"Writing Keys" << std::endl;
+    std::string wt_home = file + "_wtdb";
+    const uint32_t key_len = 8;
+    const uint32_t val_len = 512;
+    const uint32_t max_schema_len = 128;
+    const uint32_t max_conn_config_len = 128;
+
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
+
+    WT_CONNECTION *conn;
+    WT_SESSION *session;
+    WT_CURSOR *cursor;
+    char table_schema[max_schema_len];
+    char connection_config[max_conn_config_len];
+
+    sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
+    sprintf(connection_config, "create");
+
+    error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
+    error_check(conn->open_session(conn, NULL, NULL, &session));
+    error_check(session->create(session, "table:bm", table_schema));
+    error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
+
+    SimpleBigInt big_int_k(key_len), big_int_v(val_len);
+    for (auto k : keys) {
+      big_int_k = k;
+      big_int_v.randomize();
+      insert_kv(cursor, (char *) big_int_k.num, (char *) big_int_v.num);
+    }
+    error_check(conn->close(conn, NULL));
 }
 
 template<typename KeyType>

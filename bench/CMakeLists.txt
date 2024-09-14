@@ -176,4 +176,5 @@ if (ALL_RENCODER AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)
 endif()
 
 add_executable(workload_gen workload_gen.cpp zipf.c)
-target_link_libraries(workload_gen argparse)
+target_include_directories(workload_gen PUBLIC /home/chesetti/local/include)
+target_link_libraries(workload_gen argparse ${WIREDTIGER_LIB})
