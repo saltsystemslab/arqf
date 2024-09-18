@@ -156,7 +156,7 @@ function(compile_bench ds)
     endif()
 endfunction(compile_bench)
 
-find_library(WIREDTIGER_LIB NAMES wiredtiger libwiredtiger PATHS /home/chesetti/local/lib)
+find_library(WIREDTIGER_LIB NAMES wiredtiger libwiredtiger PATHS ../external/wiredtiger/build)
 
 foreach(ds ${Targets})
     compile_bench(${ds})

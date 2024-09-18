@@ -16,3 +16,6 @@
 [submodule "adaptiveqf/external/splinterdb"]
 	path = adaptiveqf/external/splinterdb
 	url = https://github.com/vmware/splinterdb
+[submodule "external/wiredtiger"]
+	path = external/wiredtiger
+	url = git@github.com:wiredtiger/wiredtiger

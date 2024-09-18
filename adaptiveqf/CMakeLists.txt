@@ -24,8 +24,8 @@ add_library(arqflib STATIC
   ./src/arqf_inmem.cc
   ./src/arqf_wt.cc
 )
-# TODO(chesetti): Add wiredtiger as a submodule and update instructions.
-target_include_directories(arqflib PUBLIC . ./include ./external/splinterdb/include /home/chesetti/local/include)
+# Hardcoded wiredtiger relative to this CMake config... there might be a better way to do this.
+target_include_directories(arqflib PUBLIC . ./include ./external/splinterdb/include ../external/wiredtiger/build/include)
 # The order seems to matter here, aio and xxhash need to compe after SplinterDB.
 target_link_libraries(arqflib PUBLIC pthread ssl crypto m ${SPLINTERDB_FULL_PATH}/libsplinterdb.a aio xxhash)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" )
