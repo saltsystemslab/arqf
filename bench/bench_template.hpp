@@ -27,6 +27,7 @@ const int default_key_len = 8, default_val_len = 504;
 uint64_t key_len, val_len;
 uint64_t default_buffer_pool_size_mb = 64;
 uint64_t buffer_pool_size_mb = 0;
+float adversarial_rate = 0.1;
 
 static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, SimpleBigInt &r)
 {
@@ -274,150 +275,103 @@ void experiment_adaptivity_disk(
     uint64_t num_adapts = 0;
     uint64_t fetch_from_db_duration_ns = 0;
     uint64_t adapt_duration_ns = 0;
-
     uint64_t query_index = 0;
     uint64_t overall_query_duration = 0;
-    uint64_t overall_adversarial_duration = 0;
-    uint64_t overall_second_adversarial_duration = 0;
-    start_timer(query_time);
-    std::set< std::pair<uint64_t, uint64_t> > adversaries;
-    std::map<uint64_t, uint64_t> fp_count;
 
-    // Basically we want enough queries to fill the cache.
-    // Then we perform enough queries to flush the cache again.
-    uint64_t num_queries_per_round = buffer_pool_size_mb * 1024 * 1024 / 512; // Each kv pair is 512 bytes
-    uint64_t num_rounds = queries.size() / num_queries_per_round;
-    std::cout<<"Starting test with " << num_rounds << " and "<<num_queries_per_round << " queries per round before flush"<<std::endl;
+    start_timer(warmup_time);
+    std::vector<std::pair<uint64_t, uint64_t> > adversaries;
+    std::vector<bool> adversary_result;
+    uint64_t num_warmup_queries = queries.size() / 2;
+    for (uint64_t i=0; i < num_warmup_queries; i++) {
+      auto q = queries[i];
+      const auto [left, right, original_result] = q;
+      bool query_result = range_f(f, left, right);
+      if (query_result) {
+        big_int_l = left;
+        big_int_r = right;
 
-    for (uint64_t round = 0; round < num_rounds; round++) {
+        start_timer(db_fetch);
+        num_db_fetches++;
+        fetch_range_from_db(cursor, big_int_l, big_int_r);
+        measure_timer(db_fetch);
+        fetch_from_db_duration_ns += t_duration_db_fetch;
 
-      start_timer(query_time);
-
-      for (uint64_t i=0; i < num_queries_per_round; i++) {
-        auto q = queries[query_index++];
-        const auto [left, right, original_result] = q;
-				bool query_result = range_f(f, left, right);
-        if (query_result) {
-					big_int_l = left;
-					big_int_r = right;
-
-          start_timer(db_fetch);
-          num_db_fetches++;
-					fetch_range_from_db(cursor, big_int_l, big_int_r);
-          measure_timer(db_fetch);
-          fetch_from_db_duration_ns += t_duration_db_fetch;
-
-					fp += !original_result;
-          if (!original_result) {
-            start_timer(adapt_qf);
-            if (!adapt_f(f, left, right)) {
-              fa++;
-            }
-            measure_timer(adapt_qf);
-            adapt_duration_ns += t_duration_adapt_qf;
-            fp_count[left]++;
-            adversaries.insert(std::pair<uint64_t, uint64_t>(left, right));
+        fp += !original_result;
+        if (!original_result) {
+          start_timer(adapt_qf);
+          if (!adapt_f(f, left, right)) {
+            fa++;
           }
+          measure_timer(adapt_qf);
+          adapt_duration_ns += t_duration_adapt_qf;
+          adversaries.push_back(std::pair<uint64_t, uint64_t>(left, right));
+          adversary_result.push_back(original_result);
         }
-        else if (!query_result && original_result)
-        {
-            std::cerr << "[!] alert, found false negative!" << std::endl;
-            fn++;
-        }
+      } else if (!query_result && original_result) {
+        std::cerr << "[!] alert, found false negative!" << std::endl;
+        fn++;
       }
-      measure_timer(query_time);
-      overall_query_duration += t_duration_query_time;
-      // Now we flush the DB with random queries.
-      // We perform enough queries to atleast fill the cache with new items.
-      uint64_t num_queries = buffer_pool_size_mb * 1024 * 1024 / 512; // Each kv pair is 512 bytes
-      for (uint64_t i=0; i<num_queries; i++) {
-        big_int_l = distr(gen);
-        fetch_successor_range_from_db(cursor, big_int_l);
-      }
-      // Optionally we can repeat false positive queries here to further stress test it.
-      uint64_t adv_count = 0;
-      start_timer(adversarial_time);
-      for (auto q : adversaries) {
-        uint64_t left = q.first;
-        uint64_t right = q.second;
-				bool query_result = range_f(f, left, right);
-        if (query_result) {
-          big_int_l = left;
-          big_int_r = right;
-					fetch_range_from_db(cursor, big_int_l, big_int_r);
-        }
-        adv_count++;
-        if (adv_count > num_queries_per_round) break;
-      }
-      measure_timer(adversarial_time);
-      overall_adversarial_duration += t_duration_adversarial_time;
-
-      uint64_t second_adv_count = 0;
-      start_timer(second_adversarial_time);
-      for (auto q : adversaries) {
-        uint64_t left = q.first;
-        uint64_t right = q.second;
-				bool query_result = range_f(f, left, right);
-        if (query_result) {
-          big_int_l = left;
-          big_int_r = right;
-					fetch_range_from_db(cursor, big_int_l, big_int_r);
-        }
-        second_adv_count++;
-        if (second_adv_count > num_queries_per_round) break;
-      }
-      measure_timer(second_adversarial_time);
-      overall_second_adversarial_duration += t_duration_second_adversarial_time;
-
-      // ...And flush the cache again!
-      for (uint64_t i=0; i<num_queries; i++) {
-        big_int_l = distr(gen);
-        fetch_successor_range_from_db(cursor, big_int_l);
-      }
-
     }
+    stop_timer(warmup_time);
+    uint64_t num_adversarial_queries = 0;
+    test_out.add_measure("adversary_set_size", adversaries.size());
+    std::cout << "Finished warmup, collected "<< adversaries.size() << std::endl;
 
-#if 0
-    for (auto q : queries)
-    {
-        q_count++;
-        if (q_count == flush_checkpoint) {
-          
-        }
-        const auto [left, right, original_result] = q;
+    uint64_t adversary_freq = queries.size();
+    if (adversarial_rate != 0) {
+      adversary_freq = 1.0 / adversarial_rate; 
+    }
+    uint64_t adversary_idx = 0;
 
-				bool query_result = range_f(f, left, right);
-        if (query_result) {
-					big_int_l = left;
-					big_int_r = right;
+    start_timer(query_time);
+    for (uint64_t i=num_warmup_queries; i < queries.size(); i++) {
+      auto q = queries[i];
+      const auto [l, r, orig] = q;
+      uint64_t left = l;
+      uint64_t right = r;
+      bool original_result = orig;
 
-          start_timer(db_fetch);
-          num_db_fetches++;
-					fetch_range_from_db(cursor, big_int_l, big_int_r);
-          measure_timer(db_fetch);
-          fetch_from_db_duration_ns += t_duration_db_fetch;
+      if (i % adversary_freq == 0) {
+        num_adversarial_queries++;
+        left = adversaries[adversary_idx].first;
+        right = adversaries[adversary_idx].second;
+        original_result = adversary_result[adversary_idx]; 
+        adversary_idx++;
+        if (adversary_idx == adversaries.size())
+          adversary_idx = 0;
+      }
 
-					fp += !original_result;
-          if (!original_result) {
-            start_timer(adapt_qf);
-            if (!adapt_f(f, left, right)) {
-              fa++;
-            }
-            measure_timer(adapt_qf);
-            adapt_duration_ns += t_duration_adapt_qf;
-            fp_count[left]++;
+      bool query_result = range_f(f, left, right);
+      if (query_result) {
+        big_int_l = left;
+        big_int_r = right;
+
+        start_timer(db_fetch);
+        num_db_fetches++;
+        fetch_range_from_db(cursor, big_int_l, big_int_r);
+        measure_timer(db_fetch);
+        fetch_from_db_duration_ns += t_duration_db_fetch;
+
+        fp += !original_result;
+        if (!original_result) {
+          start_timer(adapt_qf);
+          if (!adapt_f(f, left, right)) {
+            fa++;
           }
+          measure_timer(adapt_qf);
+          adapt_duration_ns += t_duration_adapt_qf;
+          adversaries.push_back(std::pair<uint64_t, uint64_t>(left, right));
+          adversary_result.push_back(original_result);
         }
-        else if (!query_result && original_result)
-        {
-            std::cerr << "[!] alert, found false negative!" << std::endl;
-            fn++;
-        }
-
-
+      } else if (!query_result && original_result) {
+        std::cerr << "[!] alert, found false negative!" << std::endl;
+        fn++;
+      }
+      
     }
     stop_timer(query_time);
-#endif
+
+
     auto size = size_f(f);
     test_out.add_measure("size", size);
     test_out.add_measure("bpk", TO_BPK(size, keys.size()));
@@ -429,10 +383,8 @@ void experiment_adaptivity_disk(
     test_out.add_measure("num_db_fetch", num_db_fetches);
     test_out.add_measure("db_fetch_duration_ns", fetch_from_db_duration_ns);
     test_out.add_measure("adapt_duration_ns", adapt_duration_ns);
-    test_out.add_measure("num_unique_fp", fp_count.size());
-    test_out.add_measure("query_time_ns", overall_query_duration);
-    test_out.add_measure("adversarial_query_time_ns", overall_adversarial_duration);
-    test_out.add_measure("second_adversarial_query_time_ns", overall_second_adversarial_duration);
+    test_out.add_measure("adversarial_rate", adversarial_rate);
+    test_out.add_measure("num_adversarial_queries", num_adversarial_queries);
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
@@ -501,6 +453,13 @@ argparse::ArgumentParser init_parser(const std::string &name)
         .default_value(default_val_len)
         .required();
 
+    parser.add_argument("--adversarial_rate")
+        .help("Percentage of adversarial queries in workload (0 to 100)")
+        .nargs(1)
+        .scan<'u', uint64_t>()
+        .default_value(0)
+        .required();
+
     return parser;
 }
 
@@ -517,6 +476,8 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     if (test_type == "adaptivity_disk") {
       key_len = parser.get<uint64_t>("--key_len");
       val_len = parser.get<uint64_t>("--val_len");
+      uint64_t adversarial_percent = parser.get<uint64_t>("--adversarial_rate");
+      adversarial_rate = adversarial_percent / 100.0;
       buffer_pool_size_mb = parser.get<uint64_t>("--buffer_pool_size");
     }
 

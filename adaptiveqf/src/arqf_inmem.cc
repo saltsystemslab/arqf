@@ -192,7 +192,7 @@ inline int  maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_h
   if (ret != 0) return 0; // There was no need to adapt this keepsake, so consider as adapted.
 
   if (arqf->qf->metadata->noccupied_slots > 0.999 * arqf->qf->metadata->xnslots) {
-    printf("Hit space limit %llu %llu\n", arqf->qf->metadata->noccupied_slots, arqf->qf->metadata->xnslots);
+    // printf("Hit space limit %llu %llu\n", arqf->qf->metadata->noccupied_slots, arqf->qf->metadata->xnslots);
     return -1; // not enough space;
   }
 
