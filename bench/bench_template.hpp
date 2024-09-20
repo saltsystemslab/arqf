@@ -210,8 +210,11 @@ print_cursor(WT_CURSOR *cursor)
         int ret;
         while ((ret = cursor->next(cursor)) == 0 &&
             (ret = cursor->get_value(cursor, &desc, &pvalue, &value)) == 0)
-                if (value != 0)
-                        printf("%s=%s\n", desc, pvalue);
+                if (value != 0) {
+                  int key;
+                  cursor->get_key(cursor, &key);
+                  printf("key: %d %s=%s\n", key, desc, pvalue);
+                }
         return (ret == WT_NOTFOUND ? 0 : ret);
 }
 int 
@@ -225,6 +228,46 @@ print_database_stats(WT_SESSION *session)
         ret = print_cursor(cursor);
         ret = cursor->close(cursor);
         return (ret);
+}
+
+int 
+print_database_stat(WT_SESSION *session, int stat_id)
+{
+        const char *desc, *pvalue;
+        uint64_t value;
+        WT_CURSOR *cursor;
+        int ret;
+        if ((ret = session->open_cursor(session,
+            "statistics:", NULL, NULL, &cursor)) != 0)
+                return (ret);
+        cursor->set_key(cursor, stat_id);
+        if ((ret = cursor->search(cursor)) != 0) {
+          return ret;
+        }
+        ret = cursor->get_value(cursor, &desc, &pvalue, &value);
+        printf("%s=%s %lu\n", desc, pvalue, value);
+        ret = cursor->close(cursor);
+
+        return (ret);
+}
+
+uint64_t 
+get_database_stat(WT_SESSION *session, int stat_id)
+{
+        const char *desc, *pvalue;
+        uint64_t value;
+        WT_CURSOR *cursor;
+        int ret;
+        if ((ret = session->open_cursor(session,
+            "statistics:", NULL, NULL, &cursor)) != 0)
+                return (ret);
+        cursor->set_key(cursor, stat_id);
+        if ((ret = cursor->search(cursor)) != 0) {
+          return ret;
+        }
+        ret = cursor->get_value(cursor, &desc, &pvalue, &value);
+        ret = cursor->close(cursor);
+        return value;
 }
 
 
@@ -261,6 +304,8 @@ void experiment_adaptivity_disk(
     error_check(conn->open_session(conn, NULL, NULL, &session));
     error_check(session->create(session, "table:bm", table_schema));
     error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
+    
+    // print_database_stats(session);
 
     SimpleBigInt big_int_k(key_len), big_int_v(val_len);
     SimpleBigInt big_int_l(key_len), big_int_r(key_len);
@@ -385,6 +430,8 @@ void experiment_adaptivity_disk(
     test_out.add_measure("adapt_duration_ns", adapt_duration_ns);
     test_out.add_measure("adversarial_rate", adversarial_rate);
     test_out.add_measure("num_adversarial_queries", num_adversarial_queries);
+    test_out.add_measure("bytes_read", get_database_stat(session, WT_STAT_CONN_CACHE_BYTES_READ));
+    test_out.add_measure("num_read_ios", get_database_stat(session, WT_STAT_CONN_READ_IO));
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
