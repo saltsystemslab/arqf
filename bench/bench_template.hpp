@@ -25,11 +25,12 @@
 static uint64_t optimizer_hack = 0;
 const int default_key_len = 8, default_val_len = 504;
 uint64_t key_len, val_len;
+uint64_t mixed_num_warmup_keys, mixed_num_read_queries, mixed_num_write_queries;
 uint64_t default_buffer_pool_size_mb = 64;
 uint64_t buffer_pool_size_mb = 0;
 float adversarial_rate = 0.1;
 
-static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, SimpleBigInt &r)
+static inline int fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, SimpleBigInt &r)
 {
     error_check(cursor->reset(cursor));
     cursor->set_key(cursor, (char *) l.num);
@@ -37,11 +38,12 @@ static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, Simpl
     cursor->set_key(cursor, (char *) r.num);
     error_check(cursor->bound(cursor, "action=set,bound=upper,inclusive=true"));
 
-    uint32_t x = 1;
+    uint32_t x = 0;
     while ((cursor->next(cursor)) == 0) {
-        x ^= 1;
+        x++;
     }
     optimizer_hack += x;
+    return x;
 }
 
 static inline void fetch_successor_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l)
@@ -110,7 +112,7 @@ std::string json_file = "";
 template <typename InitFun, typename RangeFun, typename SizeFun, typename key_type, typename... Args>
 void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double param, InputKeys<key_type> &keys, Workload<key_type> &queries, Args... args)
 {
-    auto f = init_f(keys.begin(), keys.end(), param, args...);
+    auto f = init_f(keys.begin(), keys.end(), true, param, args...);
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
     auto fp = 0, fn = 0;
@@ -155,7 +157,7 @@ void experiment_adaptivity(
     Workload<key_type> &queries, 
     Args... args)
 {
-    auto f = init_f(keys.begin(), keys.end(), param, args...);
+    auto f = init_f(keys.begin(), keys.end(), true, param, args...);
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
     auto fp = 0, fn = 0, fa = 0;
@@ -312,7 +314,7 @@ void experiment_adaptivity_disk(
     
     std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
 
-    auto f = init_f(keys.begin(), keys.end(), param, args...);
+    auto f = init_f(keys.begin(), keys.end(), true, param, args...);
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
     auto fp = 0, fn = 0, fa = 0;
@@ -337,12 +339,12 @@ void experiment_adaptivity_disk(
 
         start_timer(db_fetch);
         num_db_fetches++;
-        fetch_range_from_db(cursor, big_int_l, big_int_r);
+        int num_items = fetch_range_from_db(cursor, big_int_l, big_int_r);
         measure_timer(db_fetch);
         fetch_from_db_duration_ns += t_duration_db_fetch;
 
-        fp += !original_result;
-        if (!original_result) {
+        fp += (num_items == 0);
+        if (num_items == 0) {
           start_timer(adapt_qf);
           if (!adapt_f(f, left, right)) {
             fa++;
@@ -431,11 +433,144 @@ void experiment_adaptivity_disk(
     test_out.add_measure("adversarial_rate", adversarial_rate);
     test_out.add_measure("num_adversarial_queries", num_adversarial_queries);
     test_out.add_measure("bytes_read", get_database_stat(session, WT_STAT_CONN_CACHE_BYTES_READ));
-    test_out.add_measure("num_read_ios", get_database_stat(session, WT_STAT_CONN_READ_IO));
+    test_out.add_measure("num_read_disk_ios", get_database_stat(session, WT_STAT_CONN_READ_IO));
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
 }
+
+template <
+  typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, 
+  typename MetadataFun, typename key_type, typename... Args>
+void experiment_adaptivity_mixed(
+    InitFun init_f, 
+    InsertFun insert_f,
+    RangeFun range_f, 
+    AdaptFun adapt_f, 
+    SizeFun size_f, 
+    MetadataFun metadata_f, 
+    const double param, 
+    std::string wt_home,
+    InputKeys<key_type> &keys, 
+    Workload<key_type> &queries, 
+    Args... args)
+{
+  if (keys.size() < mixed_num_warmup_keys + mixed_num_write_queries) {
+    abort(); // Not enough keys to finish this test.
+  }
+  if (queries.size() < mixed_num_read_queries) {
+    abort(); // Not enough keys to read.
+  }
+
+    uint64_t num_db_fetches = 0;
+    uint64_t num_adapts = 0;
+    uint64_t fetch_from_db_duration_ns = 0;
+    uint64_t adapt_duration_ns = 0;
+  // Begin loading DB.
+    const uint32_t max_schema_len = 128;
+    const uint32_t max_conn_config_len = 128;
+
+    auto fp = 0, fn = 0, fa = 0;
+    WT_CONNECTION *conn;
+    WT_SESSION *session;
+    WT_CURSOR *cursor;
+    char table_schema[max_schema_len];
+    char connection_config[max_conn_config_len];
+    sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
+    sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
+
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
+
+    error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
+    error_check(conn->open_session(conn, NULL, NULL, &session));
+    error_check(session->create(session, "table:bm", table_schema));
+    error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
+
+    // print_database_stats(session);
+    start_timer(load_phase_time);
+    auto f = init_f(keys.begin(), keys.end(), false, param, args...);
+
+    SimpleBigInt big_int_k(key_len), big_int_v(val_len);
+    SimpleBigInt big_int_l(key_len), big_int_r(key_len);
+    for (uint64_t i=0; i < mixed_num_warmup_keys; i++) {
+      big_int_k = keys[i];
+      big_int_v.randomize();
+      insert_kv(cursor, (char *) big_int_k.num, (char *) big_int_v.num);
+      insert_f(f, keys[i]);
+    }
+    stop_timer(load_phase_time);
+
+    std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
+    std::cerr << "[+] Done with warmup phase "<<std::endl;
+
+
+    uint64_t total_ops = mixed_num_read_queries + mixed_num_write_queries;
+    uint64_t read_ops_per_cycle = ((mixed_num_read_queries * 100 ) / total_ops);
+    uint64_t write_ops_per_cycle = ((mixed_num_write_queries * 100) / total_ops);
+    uint64_t num_cycles = total_ops / 100;
+    uint64_t read_op_idx = 0;
+    uint64_t write_op_idx = mixed_num_warmup_keys;
+
+    start_timer(mixed_workload_time);
+    for (uint64_t cycle = 0; cycle < num_cycles; cycle++) {
+      for (uint64_t i=0; i < write_ops_per_cycle; i++) {
+        big_int_k = keys[write_op_idx];
+        big_int_v.randomize();
+        insert_kv(cursor, (char *) big_int_k.num, (char *) big_int_v.num);
+        insert_f(f, keys[write_op_idx]);
+        write_op_idx++;
+      }
+      for (uint64_t i=0; i < read_ops_per_cycle; i++) {
+        auto q = queries[read_op_idx];
+        const auto [left, right, original_result] = q;
+        bool query_result = range_f(f, left, right);
+        if (query_result) {
+          big_int_l = left;
+          big_int_r = right;
+
+          start_timer(db_fetch);
+          num_db_fetches++;
+          int num_items = fetch_range_from_db(cursor, big_int_l, big_int_r);
+          measure_timer(db_fetch);
+          fetch_from_db_duration_ns += t_duration_db_fetch;
+
+          fp += (num_items == 0);
+          if (num_items == 0) {
+            start_timer(adapt_qf);
+            if (!adapt_f(f, left, right)) {
+              fa++;
+            }
+            measure_timer(adapt_qf);
+            adapt_duration_ns += t_duration_adapt_qf;
+          }
+        }
+        read_op_idx++;
+      }
+    }
+    stop_timer(mixed_workload_time);
+
+    auto size = size_f(f);
+    test_out.add_measure("size", size);
+    test_out.add_measure("bpk", TO_BPK(size, keys.size()));
+    test_out.add_measure("fpr", ((double)fp / queries.size()));
+    test_out.add_measure("false_neg", fn);
+    test_out.add_measure("n_keys", keys.size());
+    test_out.add_measure("n_queries", queries.size());
+    test_out.add_measure("false_positives", fp);
+    test_out.add_measure("num_db_fetch", num_db_fetches);
+    test_out.add_measure("db_fetch_duration_ns", fetch_from_db_duration_ns);
+    test_out.add_measure("adapt_duration_ns", adapt_duration_ns);
+    test_out.add_measure("bytes_read", get_database_stat(session, WT_STAT_CONN_CACHE_BYTES_READ));
+    test_out.add_measure("num_read_disk_ios", get_database_stat(session, WT_STAT_CONN_READ_IO));
+    test_out.add_measure("num_read_queries", read_op_idx);
+    test_out.add_measure("num_write_queries", write_op_idx - mixed_num_warmup_keys);
+    metadata_f(f);
+    std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+    std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
+}
+
 
 
 argparse::ArgumentParser init_parser(const std::string &name)
@@ -482,7 +617,7 @@ argparse::ArgumentParser init_parser(const std::string &name)
 
     // TODO(chesetti): Is there a way to set and read default values?
     parser.add_argument("--test-type")
-        .help("one of adaptivity_inmem, adaptivity_disk")
+        .help("one of adaptivity_inmem, adaptivity_disk, adaptivity_mixed")
         .default_value("adaptivity_disk")
         .nargs(1);
 
@@ -498,6 +633,27 @@ argparse::ArgumentParser init_parser(const std::string &name)
         .nargs(1)
         .scan<'u', uint64_t>()
         .default_value(default_val_len)
+        .required();
+    
+    parser.add_argument("--mixed_num_warmup_keys")
+        .help("Number of keys to fillup in warmup phase")
+        .nargs(1)
+        .scan<'u', uint64_t>()
+        .default_value(0)
+        .required();
+
+    parser.add_argument("--mixed_num_reads")
+        .help("Number of read_queries in mixed workload")
+        .nargs(1)
+        .scan<'u', uint64_t>()
+        .default_value(0)
+        .required();
+
+    parser.add_argument("--mixed_num_writes")
+        .help("Number of write_queries in mixed workload")
+        .nargs(1)
+        .scan<'u', uint64_t>()
+        .default_value(0)
         .required();
 
     parser.add_argument("--adversarial_rate")
@@ -525,6 +681,14 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
       val_len = parser.get<uint64_t>("--val_len");
       uint64_t adversarial_percent = parser.get<uint64_t>("--adversarial_rate");
       adversarial_rate = adversarial_percent / 100.0;
+      buffer_pool_size_mb = parser.get<uint64_t>("--buffer_pool_size");
+    }
+    if (test_type == "adaptivity_mixed") {
+      key_len = parser.get<uint64_t>("--key_len");
+      val_len = parser.get<uint64_t>("--val_len");
+      mixed_num_warmup_keys = parser.get<uint64_t>("--mixed_num_warmup_keys");
+      mixed_num_read_queries = parser.get<uint64_t>("--mixed_num_reads");
+      mixed_num_write_queries = parser.get<uint64_t>("--mixed_num_writes");
       buffer_pool_size_mb = parser.get<uint64_t>("--buffer_pool_size");
     }
 

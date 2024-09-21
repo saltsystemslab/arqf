@@ -140,7 +140,7 @@ static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quoti
 }
 
 template <typename t_itr, typename... Args>
-inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk, Args... args)
+inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, bool load_keys, const double bpk, Args... args)
 {
   auto&& t = std::forward_as_tuple(args...);
   auto queries_temp = std::get<0>(t);
@@ -173,6 +173,8 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk
   InMemArqf_init(arqf, n_slots, key_size, memento_bits, seed);
   // qf_set_auto_resize(qf, true);
 
+  if (!load_keys) return arqf;
+
   start_timer(build_time);
 
   auto key_hashes = std::vector<uint64_t>(n_items);
@@ -200,6 +202,12 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk
   stop_timer(build_time);
   check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
   return arqf;
+}
+
+template <typename value_type>
+inline bool insert_arqf(InMemArqf* arqf, const value_type value) 
+{
+  return InMemArqf_insert(arqf, value, 0);
 }
 
 template <typename value_type>
@@ -246,11 +254,12 @@ inline void add_metadata(InMemArqf* arqf)
 }
 
 template <
-    typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun,
+    typename InitFun, typename RangeFun, typename InsertFun, typename AdaptFun, typename SizeFun, typename MetadataFun,
     typename... Args>
 void run_test(
     argparse::ArgumentParser& parser,
     InitFun init_f,
+    InsertFun insert_f,
     RangeFun range_f,
     AdaptFun adapt_f,
     SizeFun size_f,
@@ -283,6 +292,24 @@ void run_test(
         keys,
         queries,
         queries);
+  }  else if (test_type == "adaptivity_mixed") {
+    std::string wt_home = "mixed_workload_wt";
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
+    experiment_adaptivity_mixed(
+        init_f,
+        insert_f,
+        range_f,
+        adapt_f, 
+        size_f,
+        metadata_f,
+        arg,
+        wt_home,
+        keys,
+        queries,
+        queries);
+
   } else {
     std::cerr << "Specify which type of test to run with --test_type" << std::endl;
     abort();
@@ -302,6 +329,7 @@ int main(int argc, char const* argv[])
   auto test_type = parser.get<std::string>("--test-type");
   run_test(parser,
       pass_fun(init_arqf),
+      pass_ref(insert_arqf),
       pass_ref(query_arqf),
       pass_ref(adapt_arqf),
       pass_ref(size_arqf),

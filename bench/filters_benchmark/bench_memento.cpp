@@ -135,7 +135,7 @@ inline void check_iteration_validity(QF* qf, bool mode)
 }
 
 template <typename t_itr, typename... Args>
-inline QF* init_memento(const t_itr begin, const t_itr end, const double bpk, Args... args)
+inline QF* init_memento(const t_itr begin, const t_itr end, bool load_keys, const double bpk, Args... args)
 {
   auto&& t = std::forward_as_tuple(args...);
   auto queries_temp = std::get<0>(t);
@@ -163,8 +163,10 @@ inline QF* init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
 
   QF* qf = (QF*)malloc(sizeof(QF));
   qf_malloc(qf, n_slots, key_size, memento_bits, QF_HASH_DEFAULT, seed);
-  qf_set_auto_resize(qf, true);
+  qf_set_auto_resize(qf, false); // Don't resize for these tests.
   qf_dump_metadata(qf);
+
+  if (!load_keys) return qf;
 
   start_timer(build_time);
 
@@ -195,6 +197,14 @@ inline QF* init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
   // check_iteration_validity(qf, false);
 
   return qf;
+}
+
+template <typename value_type>
+inline bool insert_memento(QF* f, const value_type value)
+{
+  value_type key = value >> f->metadata->memento_bits;
+  value_type memento = value & ((1ULL << f->metadata->memento_bits) - 1);
+  return qf_insert_single(f, key, memento, QF_NO_LOCK);
 }
 
 template <typename value_type>
@@ -231,11 +241,12 @@ inline void add_metadata(QF* f)
 }
 
 template <
-    typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun,
+    typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun,
     typename... Args>
 void run_test(
     argparse::ArgumentParser& parser,
     InitFun init_f,
+    InsertFun insert_f,
     RangeFun range_f,
     AdaptFun adapt_f,
     SizeFun size_f,
@@ -268,7 +279,25 @@ void run_test(
         keys,
         queries,
         queries);
-  } else {
+  } else if (test_type == "adaptivity_mixed") {
+    std::string wt_home = "mixed_workload_wt";
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
+    experiment_adaptivity_mixed(
+        init_f,
+        insert_f,
+        range_f,
+        adapt_f, 
+        size_f,
+        metadata_f,
+        arg,
+        wt_home,
+        keys,
+        queries,
+        queries);
+  } 
+  else {
     std::cerr << "Specify which type of test to run with --test_type" << std::endl;
     abort();
   }
@@ -289,6 +318,7 @@ int main(int argc, char const* argv[])
   run_test(
       parser,
       pass_fun(init_memento),
+      pass_ref(insert_memento),
       pass_ref(query_memento),
       pass_ref(adapt_memento),
       pass_ref(size_memento),

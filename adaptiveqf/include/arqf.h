@@ -38,6 +38,7 @@ int arqf_init_with_rhm(ARQF* arqf, splinterdb* db, uint64_t nslots, uint64_t key
    *  */
 int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t nkeys, int flags);
 int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags);
+int arqf_insert(ARQF* arqf, uint64_t fp_key, int flags);
 int arqf_adapt_range(ARQF* arqf, uint64_t left, uint64_t right, int flags);
 
 #ifdef __cplusplus

@@ -3815,15 +3815,15 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
 }
 
 int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
-  // TODO(chesetti): Handle case of extensions.
+  // TODO(chesetti): Check if you handle duplicate mementos.
   uint64_t hash = key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    abort(); 
+    hash = arqf_hash(qf, hash);
   }
   uint64_t hash_memento = hash & BITMASK(qf->metadata->value_bits);
   const uint64_t hash_remainder = (hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
   const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
-  const uint64_t fingerprint_bits = key >> qf->metadata->value_bits;
+  const uint64_t fingerprint_bits = hash >> qf->metadata->value_bits;
   uint64_t runstart_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
   if (runstart_index < hash_quotient) runstart_index = hash_quotient;
   uint64_t runend_index = run_end(qf, hash_quotient);

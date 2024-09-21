@@ -184,7 +184,7 @@ static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quoti
 }
 
 template <typename t_itr, typename... Args>
-inline QF* init_qf(const t_itr begin, const t_itr end, const double bpk, Args... args)
+inline QF* init_qf(const t_itr begin, const t_itr end, bool load_keys, const double bpk, Args... args)
 {
   auto&& t = std::forward_as_tuple(args...);
   auto queries_temp = std::get<0>(t);
@@ -217,6 +217,8 @@ inline QF* init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
   qf_malloc(qf, n_slots, key_size, memento_bits, QF_HASH_DEFAULT, seed);
   // qf_set_auto_resize(qf, true);
 
+  if (!load_keys) return qf;
+
   start_timer(build_time);
 
   auto key_hashes = std::vector<uint64_t>(n_items);
@@ -248,6 +250,12 @@ inline QF* init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
   boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
   check_iteration_validity(qf, &key_hashes[0], nkeys);
   return qf;
+}
+
+template <typename value_type>
+inline bool insert_qf(QF* qf, const value_type value)
+{
+  return qf_insert_memento(qf, value, 0);
 }
 
 template <typename value_type>
@@ -320,6 +328,23 @@ int main(int argc, char const* argv[])
         pass_ref(size_qf),
         pass_ref(add_metadata),
         arg, db_home, keys, queries, queries);
+  } else if (test_type == "adaptivity_mixed") {
+    std::string wt_home = "mixed_workload_wt";
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
+    experiment_adaptivity_mixed(
+        pass_fun(init_qf),
+        pass_ref(insert_qf),
+        pass_ref(query_qf),
+        pass_ref(adapt_qf),
+        pass_ref(size_qf),
+        pass_ref(add_metadata),
+        arg,
+        wt_home,
+        keys,
+        queries,
+        queries);
   } else {
     std::cerr << "Specify which type of test to run with --test_type" << std::endl;
     abort();

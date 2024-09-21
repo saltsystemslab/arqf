@@ -162,6 +162,7 @@ static inline void error_check(int ret)
 
 static inline void insert_kv(WT_CURSOR* cursor, char* key, char* value)
 {
+  cursor->reset(cursor);
   cursor->set_key(cursor, key);
   cursor->set_value(cursor, value);
   error_check(cursor->insert(cursor));

@@ -42,6 +42,27 @@ int InMemArqf_bulk_load(InMemArqf* arqf, uint64_t *sorted_hashes, uint64_t *keys
   return 0;
 }
 
+int InMemArqf_insert(InMemArqf* arqf, uint64_t value, int flags) {
+  // TODO: Check if value exists already.
+  const uint64_t quotient_bits = arqf->qf->metadata->quotient_bits;
+  const uint64_t remainder_bits = arqf->qf->metadata->key_remainder_bits;
+  const uint64_t memento_bits = arqf->qf->metadata->value_bits;
+  const uint64_t n_slots = arqf->qf->metadata->nslots;
+  const uint64_t seed = arqf->qf->metadata->seed;
+  uint64_t last_fingerprint = -1;
+
+  qf_insert_memento(arqf->qf, value, flags);
+
+  uint64_t hash = value;
+  if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
+    hash = arqf_hash(arqf->qf, value);
+  }
+  uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
+  arqf->rhm.insert({ fingerprint, value });
+  return 0;
+  
+}
+
 // x, y must be fingerprints (no mementos)
 inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_size, int remainder_size, int memento_size) {
   if (x == y) {
