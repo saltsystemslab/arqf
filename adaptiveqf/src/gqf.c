@@ -1756,6 +1756,9 @@ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits
 	qf->metadata->key_remainder_bits = key_remainder_bits;
 	qf->metadata->bits_per_slot = bits_per_slot;
 	qf->metadata->quotient_bits = key_bits - key_remainder_bits;
+  qf->metadata->n_successful_adapts = 0;
+  qf->metadata->n_failed_adapt_no_space = 0;
+  qf->metadata->n_failed_adapt_no_bits = 0;
 	#if 0
 	while (qbits > 1) {
 		qbits >>= 1;

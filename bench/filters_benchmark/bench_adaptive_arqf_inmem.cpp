@@ -153,7 +153,6 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, bool load_keys, 
   //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
   const uint64_t seed = 1380;
   const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-  const double load_factor = 0.90;
   const uint64_t n_slots = n_items / load_factor + std::sqrt(n_items);
   uint32_t memento_bits = 1;
   while ((1ULL << memento_bits) < max_range_size)
@@ -251,6 +250,9 @@ inline void add_metadata(InMemArqf* arqf)
   test_out.add_measure("m_bits", f->metadata->value_bits);
   test_out.add_measure("n_slots", f->metadata->xnslots);
   test_out.add_measure("noccupied_slots", f->metadata->noccupied_slots);
+  test_out.add_measure("n_successful_adapts", arqf->qf->metadata->n_successful_adapts);
+  test_out.add_measure("n_failed_adapt_no_space", arqf->qf->metadata->n_failed_adapt_no_space);
+  test_out.add_measure("n_failed_adapt_no_bits", arqf->qf->metadata->n_failed_adapt_no_bits);
 }
 
 template <

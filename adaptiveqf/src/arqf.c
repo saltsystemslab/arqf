@@ -157,6 +157,7 @@ inline int adapt_keepsake(
       uint64_t collision_prefix = (collision_hash) >> memento_size;
       printf("Not enough bits to break collision\n", fp_prefix, collision_prefix);
 #endif
+      arqf->qf->metadata->n_failed_adapt_no_bits++;
       // TODO(chesetti): Insert new extended fingerprint
       // arqf->rhm.insert({keepsake_fingerprint, key_in_keepsake});
       db_insert(arqf->rhm, &keepsake_fingerprint, sizeof(keepsake_fingerprint), &key_in_keepsake, sizeof(key_in_keepsake), 1, 0);
@@ -214,6 +215,7 @@ inline int  maybe_adapt_keepsake(ARQF *arqf, uint64_t fp_key, uint64_t fp_hash, 
 
   if (arqf->qf->metadata->noccupied_slots > 0.999 * arqf->qf->metadata->xnslots) {
     // printf("Hit space limit %llu %llu\n", arqf->qf->metadata->noccupied_slots, arqf->qf->metadata->xnslots);
+    arqf->qf->metadata->n_failed_adapt_no_space++;
     return -1; // not enough space;
   }
 
@@ -266,6 +268,7 @@ int arqf_adapt_range(ARQF *arqf, uint64_t left, uint64_t right, int flags) {
   }
   assert((ret1!=0 || ret2!=0) || (qf_range_query(arqf->qf,l_hash, r_hash, QF_KEY_IS_HASH) == 0));
   if (ret1 == 0 && ret2 == 0) {
+    arqf->qf->metadata->n_successful_adapts++;
     return 0;
   } else {
     return -1;

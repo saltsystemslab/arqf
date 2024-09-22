@@ -29,6 +29,7 @@ uint64_t mixed_num_warmup_keys, mixed_num_read_queries, mixed_num_write_queries;
 uint64_t default_buffer_pool_size_mb = 64;
 uint64_t buffer_pool_size_mb = 0;
 float adversarial_rate = 0.1;
+double load_factor = 0.90;
 
 static inline int fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, SimpleBigInt &r)
 {
@@ -663,6 +664,11 @@ argparse::ArgumentParser init_parser(const std::string &name)
         .default_value(0)
         .required();
 
+    parser.add_argument("--load_factor")
+        .help("Load factor of filter (0 to 100)")
+        .nargs(1)
+        .scan<'u', uint64_t>();
+
     return parser;
 }
 
@@ -732,6 +738,12 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     {
         print_json = true;
         json_file = *arg_json;
+    }
+    if (auto load_factor_flag = parser.present<uint64_t>("--load_factor"))
+    {
+        json_file = (*load_factor_flag)/100.0;
+    } else {
+      load_factor = 0.90;
     }
 
     std::mt19937 shuffle_gen(query_shuffle_seed);
