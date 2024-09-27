@@ -59,7 +59,6 @@ int arqf_insert(ARQF* arqf, uint64_t fp_key, int flags) {
   db_insert(arqf->rhm, &fingerprint, sizeof(fingerprint), &fp_key, sizeof(fp_key), 1, 0);
   return 0;
 }
-
 // x, y must be fingerprints (no mementos)
 inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_size, int remainder_size, int memento_size) {
   if (x == y) {

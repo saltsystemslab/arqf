@@ -62,7 +62,6 @@ int InMemArqf_insert(InMemArqf* arqf, uint64_t value, int flags) {
   return 0;
   
 }
-
 // x, y must be fingerprints (no mementos)
 inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_size, int remainder_size, int memento_size) {
   if (x == y) {

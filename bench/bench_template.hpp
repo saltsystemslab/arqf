@@ -162,6 +162,7 @@ void experiment_adaptivity(
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
     auto fp = 0, fn = 0, fa = 0;
+
     std::map<uint64_t, uint64_t> fp_count;
     start_timer(query_time);
     for (auto q : queries)
@@ -319,6 +320,9 @@ void experiment_adaptivity_disk(
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
     auto fp = 0, fn = 0, fa = 0;
+    auto fp_adversarial = 0;
+    auto fp_query_set = 0;
+
     uint64_t num_db_fetches = 0;
     uint64_t num_adapts = 0;
     uint64_t fetch_from_db_duration_ns = 0;
@@ -401,6 +405,11 @@ void experiment_adaptivity_disk(
         fetch_from_db_duration_ns += t_duration_db_fetch;
 
         fp += !original_result;
+        if (i % adversary_freq == 0) {
+          fp_adversarial++;
+        } else {
+          fp_query_set++;
+        }
         if (!original_result) {
           start_timer(adapt_qf);
           if (!adapt_f(f, left, right)) {
@@ -428,6 +437,8 @@ void experiment_adaptivity_disk(
     test_out.add_measure("n_keys", keys.size());
     test_out.add_measure("n_queries", queries.size());
     test_out.add_measure("false_positives", fp);
+    test_out.add_measure("false_positives_adversarial", fp_adversarial);
+    test_out.add_measure("false_positives_query", fp_query_set);
     test_out.add_measure("num_db_fetch", num_db_fetches);
     test_out.add_measure("db_fetch_duration_ns", fetch_from_db_duration_ns);
     test_out.add_measure("adapt_duration_ns", adapt_duration_ns);
@@ -741,7 +752,7 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     }
     if (auto load_factor_flag = parser.present<uint64_t>("--load_factor"))
     {
-        json_file = (*load_factor_flag)/100.0;
+        load_factor= (*load_factor_flag)/100.0;
     } else {
       load_factor = 0.90;
     }

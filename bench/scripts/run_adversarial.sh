@@ -2,8 +2,6 @@
 BIN_DIR=./release
 BPK=16
 
-set -x
-
 if [[ $1 == "small" ]]; then
 WORKLOAD_DIR=$2/adversarial_small/kuniform
 CACHE_SIZE=16
@@ -25,6 +23,10 @@ fi
 
 if [[ $3 == "disk" ]]; then
   TEST_TYPE=adaptivity_disk
+fi
+
+if [[ $4 == "echo" ]]; then
+  BIN_DIR="echo ./release"
 fi
 
 for dir in ${WORKLOAD_DIR}/*/
