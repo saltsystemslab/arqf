@@ -178,9 +178,12 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, bool load_keys, 
 
   auto key_hashes = std::vector<uint64_t>(n_items);
   std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-    uint64_t hash = arqf_hash(arqf->qf, x);
-    uint64_t mask = 1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot);
-    return hash & (mask - 1);
+      uint64_t hash = arqf_hash(arqf->qf, x);
+      uint64_t memento_mask  = (1ULL << (arqf->qf->metadata->value_bits)) - 1;
+      hash = (hash << arqf->qf->metadata->value_bits) | (x & memento_mask);
+      uint64_t hash_mask  = (1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot)) - 1;
+      uint64_t key_hash = hash & (hash_mask);
+      return hash & (hash_mask);
   });
   auto keys = std::vector<uint64_t>(n_items);
   std::transform(begin, end, keys.begin(), [&](auto x) {
@@ -213,14 +216,11 @@ template <typename value_type>
 inline bool query_arqf(InMemArqf* arqf, const value_type left, const value_type right)
 {
   QF* qf = arqf->qf;
-  uint64_t l_hash = arqf_hash(qf, left);
-  uint64_t r_hash = arqf_hash(qf, right);
-
   int result;
   if (left == right) {
-    result = qf_point_query(arqf->qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+    result = qf_point_query(arqf->qf, left, QF_NO_LOCK);
   } else {
-    result = qf_range_query(arqf->qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+    result = qf_range_query(arqf->qf, left, right, QF_NO_LOCK);
   }
   return result;
 }

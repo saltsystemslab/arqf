@@ -154,19 +154,6 @@ inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
 #endif
 }
 
-static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
-{
-  const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
-  const uint64_t memento_mask =  (1ULL << memento_bits) - 1;
-  const uint64_t hash_mask = (1ULL << (quotient_bits + remainder_bits)) - 1;
-  auto y = x >> memento_bits;
-  uint64_t hash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
-  const uint64_t address = fast_reduce((hash & quotient_mask) << (32 - quotient_bits),
-      n_slots);
-  hash = (hash >> quotient_bits) | (address << remainder_bits);
-  return (hash << memento_bits) | (x & memento_mask);
-}
-
 template <typename t_itr, typename... Args>
 inline ARQF *init_qf(const t_itr begin, const t_itr end, bool load_keys, const double bpk, Args... args)
 {
@@ -210,8 +197,11 @@ inline ARQF *init_qf(const t_itr begin, const t_itr end, bool load_keys, const d
     auto key_hashes = std::vector<uint64_t>(n_items);
     std::transform(begin, end, key_hashes.begin(), [&](auto x) {
       uint64_t hash = arqf_hash(arqf->qf, x);
-      uint64_t mask  = 1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot);
-      return hash & (mask - 1);
+      uint64_t memento_mask  = (1ULL << (arqf->qf->metadata->value_bits)) - 1;
+      hash = (hash << arqf->qf->metadata->value_bits) | (x & memento_mask);
+      uint64_t hash_mask  = (1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot)) - 1;
+      uint64_t key_hash = hash & (hash_mask);
+      return hash & (hash_mask);
     });
     auto keys = std::vector<uint64_t>(n_items);
     std::transform(begin, end, keys.begin(), [&](auto x) {
@@ -262,14 +252,11 @@ inline bool insert_arqf(ARQF* arqf, const value_type value)
 template <typename value_type>
 inline bool query_qf(ARQF *qf, const value_type left, const value_type right)
 {
-    uint64_t l_hash = arqf_hash(qf->qf, left);
-    uint64_t r_hash = arqf_hash(qf->qf, right);
-
     int result;
     if (left == right) {
-      result = qf_point_query(qf->qf, l_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+      result = qf_point_query(qf->qf, left, QF_NO_LOCK);
     } else {
-      result = qf_range_query(qf->qf, l_hash, r_hash, QF_KEY_IS_HASH | QF_NO_LOCK);
+      result = qf_range_query(qf->qf, left, right, QF_NO_LOCK);
     }
     return result;
 }
@@ -294,11 +281,9 @@ int main(int argc, char const *argv[])
         std::exit(1);
     }
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
-    std::cout<<keys.size()<<" "<<queries.size()<<std::endl;
     auto test_type = parser.get<std::string>("--test-type");
 
     if (test_type == "adaptivity_inmem") {
-      auto [ keys, queries, arg ] = read_parser_arguments(parser);
       experiment_adaptivity(
           pass_fun(init_qf), 
           pass_ref(query_qf), 
@@ -307,7 +292,6 @@ int main(int argc, char const *argv[])
           pass_ref(add_metadata), 
           arg, keys, queries, queries);
     } else if (test_type == "adaptivity_disk") {
-      auto [ keys, queries, arg ] = read_parser_arguments(parser);
       std::string db_home = parser.get<std::string>("keys");
       db_home += "_wtdb";
       experiment_adaptivity_disk(

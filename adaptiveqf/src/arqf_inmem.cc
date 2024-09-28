@@ -35,8 +35,10 @@ int InMemArqf_bulk_load(InMemArqf* arqf, uint64_t *sorted_hashes, uint64_t *keys
     uint64_t hash = keys[i];
     if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
       hash = arqf_hash(arqf->qf, key);
+    } else {
+      hash = key >> memento_bits;
     }
-    uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
+    uint64_t fingerprint = hash & BITMASK(quotient_bits + remainder_bits);
     arqf->rhm.insert({fingerprint, key});
   }
   return 0;
@@ -56,6 +58,8 @@ int InMemArqf_insert(InMemArqf* arqf, uint64_t value, int flags) {
   uint64_t hash = value;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
     hash = arqf_hash(arqf->qf, value);
+  } else {
+    hash = value >> memento_bits;
   }
   uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
   arqf->rhm.insert({ fingerprint, value });
@@ -93,7 +97,6 @@ inline bool should_adapt_keepsake(
     int memento_size)
 {
   uint64_t fp_memento = fp_key & BITMASK(memento_size);
-  uint64_t fp_prefix = fp_key >> memento_size;
   for (uint64_t i=0; i < num_colliding_keys; i++) {
     uint64_t colliding_key = colliding_keys[i];
     uint64_t collision_memento = colliding_key & BITMASK(memento_size);
@@ -126,7 +129,6 @@ inline int adapt_keepsake(
   const uint64_t quotient_size = arqf->qf->metadata->quotient_bits;
   const uint64_t remainder_size = arqf->qf->metadata->key_remainder_bits;
   const uint64_t memento_size = arqf->qf->metadata->value_bits;
-  const uint64_t fp_prefix = fp_hash >> memento_size;
 
   uint64_t current_keepsake_end = keepsake_end;
   uint64_t last_overwritten_index = keepsake_start-1;
@@ -136,8 +138,7 @@ inline int adapt_keepsake(
   for (int i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
     uint64_t collision_hash = arqf_hash(arqf->qf, key_in_keepsake);
-    uint64_t collision_prefix = (collision_hash) >> memento_size;
-    if (collision_prefix == fp_prefix) {
+    if (collision_hash == fp_hash) {
 #if DEBUG
       if ((fp_key >> memento_size) != key_in_keepsake >> memento_size) {
         printf("Collision on hash detected, need more bits, might fail to adapt.\n");
@@ -145,8 +146,7 @@ inline int adapt_keepsake(
 #endif
       continue;
     }
-    uint64_t collision_memento = (collision_hash) & BITMASK(memento_size);
-    uint8_t new_fingerprint_size = min_diff_fingerprint_size(fp_prefix, collision_prefix, quotient_size, remainder_size, memento_size);
+    uint8_t new_fingerprint_size = min_diff_fingerprint_size(fp_hash, collision_hash, quotient_size, remainder_size, memento_size);
     if (min_required_fingerprint_size < new_fingerprint_size) min_required_fingerprint_size = new_fingerprint_size;
   }
 
@@ -155,8 +155,7 @@ inline int adapt_keepsake(
       uint64_t key_in_keepsake = colliding_keys[i];
 #if DEBUG
       uint64_t collision_hash = arqf_hash(arqf->qf, key_in_keepsake);
-      uint64_t collision_prefix = (collision_hash) >> memento_size;
-      printf("Not enough bits to break collision\n", fp_prefix, collision_prefix);
+      printf("Not enough bits to break collision\n", fp_hash, collision_hash);
 #endif
       arqf->qf->metadata->n_failed_adapt_no_bits++;
       arqf->rhm.insert({keepsake_fingerprint, key_in_keepsake});
@@ -167,14 +166,13 @@ inline int adapt_keepsake(
   for (int i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
     uint64_t collision_hash = arqf_hash(arqf->qf, key_in_keepsake);
-    uint64_t collision_prefix = (collision_hash) >> memento_size;
-    uint64_t collision_memento = (collision_hash) & BITMASK(memento_size);
+    uint64_t collision_memento = (key_in_keepsake) & BITMASK(memento_size);
 
-    uint8_t new_fingerprint_size = min_diff_fingerprint_size(fp_prefix, collision_prefix, quotient_size, remainder_size, memento_size);
-    if (collision_prefix == fp_prefix) {
+    uint8_t new_fingerprint_size = min_diff_fingerprint_size(fp_hash, collision_hash, quotient_size, remainder_size, memento_size);
+    if (collision_hash == fp_hash) {
       new_fingerprint_size = min_required_fingerprint_size;
     }
-    uint64_t new_fingerprint_bits = collision_prefix & BITMASK(new_fingerprint_size);
+    uint64_t new_fingerprint_bits = collision_hash & BITMASK(new_fingerprint_size);
     _overwrite_keepsake(
         arqf->qf, 
         new_fingerprint_bits, 
@@ -228,7 +226,7 @@ inline int  maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_h
   }
   ret = 0;
   if (query_type == POINT_QUERY || 
-      should_adapt_keepsake(colliding_keys, num_colliding_keys, fp_hash, query_type, memento_size)) {
+      should_adapt_keepsake(colliding_keys, num_colliding_keys, fp_key, query_type, memento_size)) {
     ret = adapt_keepsake(
         arqf,
         colliding_keys,
@@ -249,18 +247,19 @@ int InMemArqf_adapt_range(InMemArqf* arqf, uint64_t left, uint64_t right, int fl
   uint64_t l_hash = left;
   uint64_t r_hash = right;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    l_hash = arqf_hash(arqf->qf, l_hash);
-    r_hash = arqf_hash(arqf->qf, r_hash);
+    l_hash = arqf_hash(arqf->qf, left);
+    r_hash = arqf_hash(arqf->qf, right);
+  } else {
+    l_hash = left >> (arqf->qf->metadata->value_bits);
+    r_hash = right >> (arqf->qf->metadata->value_bits);
   }
-#if VERBOSE 
-   printf("Adapting range: %llu %llu, hash: %llu %llu\n", left, right, l_hash, r_hash);
-#endif
+   // printf("Adapting range: %llu %llu, hash: %llu %llu\n", left, right, l_hash, r_hash);
   int ret1 = maybe_adapt_keepsake(arqf, left, l_hash, LEFT_PREFIX);
   int ret2 = 0;
   if (l_prefix != r_prefix) {
     ret2 = maybe_adapt_keepsake(arqf, right, r_hash, RIGHT_PREFIX);
   }
-  assert((ret1!=0 || ret2!=0) || (qf_range_query(arqf->qf,l_hash, r_hash, QF_KEY_IS_HASH) == 0));
+  assert((ret1!=0 || ret2!=0) || (qf_range_query(arqf->qf,left, right, 0) == 0));
   if (ret1 == 0 && ret2 == 0) {
     arqf->qf->metadata->n_successful_adapts++;
     return 0;

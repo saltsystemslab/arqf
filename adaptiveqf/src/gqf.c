@@ -3024,9 +3024,8 @@ uint64_t arqf_hash(QF* qf, uint64_t x)
       n_slots);
   // Use the lower order r (after q bits) of mhash to determine reminder.
   uint64_t hash = ((mhash & hash_mask) >> quotient_bits) | (address << remainder_bits);
-  hash = (hash << memento_bits) | (x & memento_mask);
   // Fill the higher order bits with bits from the MurmurHash, these will be used as extensions.
-  hash = hash | (mhash & ~BITMASK(quotient_bits + remainder_bits + memento_bits));
+  hash = hash | (mhash & ~BITMASK(quotient_bits + remainder_bits));
   return hash;
 }
 
@@ -3299,8 +3298,6 @@ static inline int query_colliding_fingerprint(
     uint64_t fp_hash,
     uint64_t* start_index)
 {
-  // Remove the memento bits.
-  fp_hash >>= qf->metadata->value_bits;
 
   const uint64_t quotient_bits = qf->metadata->quotient_bits;
   const uint64_t remainder_bits = qf->metadata->key_remainder_bits;
@@ -3361,9 +3358,6 @@ int find_colliding_fingerprint(
     uint64_t* num_ext_bits,
     uint64_t* keepsake_runend_index)
 {
-  // Remove the memento bits.
-  fp_hash >>= qf->metadata->value_bits;
-
   const uint64_t quotient_bits = qf->metadata->quotient_bits;
   const uint64_t remainder_bits = qf->metadata->key_remainder_bits;
   const uint64_t memento_bits = qf->metadata->value_bits;
@@ -3540,7 +3534,13 @@ static inline int _add_to_end_of_keepsake_run(
   return 0;
 }
 
-int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bits, uint64_t memento, uint64_t start_index, uint64_t* last_overwritten_index, uint64_t* old_keespake_runend)
+int _overwrite_keepsake(QF* qf,
+    uint64_t fingerprint,
+    uint8_t num_fingerprint_bits,
+    uint64_t memento,
+    uint64_t start_index,
+    uint64_t* last_overwritten_index,
+    uint64_t* old_keespake_runend)
 {
   // assert(num_fingerprint_bits >= qf->metadata->quotient_bits + qf->metadata->bits_per_slot);
 #if DEBUG
@@ -3580,9 +3580,6 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
   }
 
   if (!extension_found) {
-#if DEBUG
-    // fprintf(stdout, "Inserting extenstion at %lld\n", current_index);
-#endif
     uint64_t value = fingerprint_remainder;
     value |= (fingerprint_ext_bits << qf->metadata->key_remainder_bits);
     value |= (memento << (num_ext_bits + qf->metadata->key_remainder_bits));
@@ -3602,9 +3599,6 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
         last_overwritten_index, 
         old_keespake_runend
       );
-#if DEBUG
-    // fprintf(stdout, "Should have inserted %llu (with extension) at %lld\n", value, current_index);
-#endif
     if (num_ext_bits) {
       num_ext_bits -= qf->metadata->value_bits;
       METADATA_WORD(qf, extensions, current_index) |= (1ULL << (current_index % QF_SLOTS_PER_BLOCK));
@@ -3614,14 +3608,6 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
         num_ext_bits -= qf->metadata->bits_per_slot;
       }
     }
-#if DEBUG
-    if(qf_point_query(qf, (hash << qf->metadata->value_bits) | memento, QF_KEY_IS_HASH)==0) {
-      printf("Not found, something is wrong!\n");
-      // This is to let gdb inspect the query.
-      int result = qf_point_query(qf, (hash << qf->metadata->value_bits) | memento, QF_KEY_IS_HASH);
-      printf("%d\n", result);
-    }
-#endif
     return 0;
   }
 
@@ -3717,11 +3703,11 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
   uint64_t hash = key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
     hash = arqf_hash(qf, key);
+  } else {
+    hash = (key >> qf->metadata->value_bits);
   }
-  const uint64_t hash_memento = hash & BITMASK(qf->metadata->value_bits);
-  const uint64_t hash_remainder = (hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
-  const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
-  const uint64_t hash_ext_bits = (hash >> (qf->metadata->quotient_bits + qf->metadata->bits_per_slot));
+  const uint64_t hash_memento = key & BITMASK(qf->metadata->value_bits);
+  const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits)) & BITMASK(qf->metadata->quotient_bits);
 
   if (!is_occupied(qf, hash_quotient)) {
     return 0;
@@ -3749,17 +3735,21 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
 }
 
 int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) {
-  uint64_t l_hash = l_key;
-  uint64_t r_hash = r_key;
+  uint64_t l_hash;
+  uint64_t r_hash;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    abort(); 
+    l_hash = arqf_hash(qf, l_key);
+    r_hash = arqf_hash(qf, r_key);
+  } else {
+    l_hash = l_key >> qf->metadata->value_bits;
+    r_hash = r_key >> qf->metadata->value_bits;
   }
-  const uint64_t l_remainder = (l_hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
-  const uint64_t l_quotient = (l_hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
-  const uint64_t l_memento = l_hash & BITMASK(qf->metadata->value_bits);
-  const uint64_t r_remainder = (r_hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
-  const uint64_t r_quotient = (r_hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
-  const uint64_t r_memento = r_hash & BITMASK(qf->metadata->value_bits);
+  const uint64_t l_remainder = (l_hash) & BITMASK(qf->metadata->key_remainder_bits);
+  const uint64_t l_quotient = (l_hash >> (qf->metadata->key_remainder_bits)) & BITMASK(qf->metadata->quotient_bits);
+  const uint64_t l_memento = l_key & BITMASK(qf->metadata->value_bits);
+  const uint64_t r_remainder = (r_hash) & BITMASK(qf->metadata->key_remainder_bits);
+  const uint64_t r_quotient = (r_hash >> (qf->metadata->key_remainder_bits)) & BITMASK(qf->metadata->quotient_bits);
+  const uint64_t r_memento = r_key & BITMASK(qf->metadata->value_bits);
 
   if (is_occupied(qf, l_quotient)) {
     uint64_t current_index; 
@@ -3819,11 +3809,13 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   uint64_t hash = key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
     hash = arqf_hash(qf, hash);
+  } else {
+    hash = key >> qf->metadata->value_bits;
   }
-  uint64_t hash_memento = hash & BITMASK(qf->metadata->value_bits);
-  const uint64_t hash_remainder = (hash >> qf->metadata->value_bits) & BITMASK(qf->metadata->key_remainder_bits);
-  const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits + qf->metadata->value_bits)) & BITMASK(qf->metadata->quotient_bits);
-  const uint64_t fingerprint_bits = hash >> qf->metadata->value_bits;
+  uint64_t hash_memento = key & BITMASK(qf->metadata->value_bits);
+  const uint64_t hash_remainder = hash & BITMASK(qf->metadata->key_remainder_bits);
+  const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits)) & BITMASK(qf->metadata->quotient_bits);
+  const uint64_t fingerprint_bits = hash; 
   uint64_t runstart_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient-1) + 1;
   if (runstart_index < hash_quotient) runstart_index = hash_quotient;
   uint64_t runend_index = run_end(qf, hash_quotient);
