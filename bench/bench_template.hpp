@@ -18,9 +18,11 @@
 
 #pragma once
 
+#include <cstdint>
 #include <iostream>
 #include <argparse/argparse.hpp>
 #include "bench_utils.hpp"
+#include "splinterdb/platform_linux/public_platform.h"
 
 static uint64_t optimizer_hack = 0;
 const int default_key_len = 8, default_val_len = 504;
@@ -443,21 +445,21 @@ argparse::ArgumentParser init_parser(const std::string &name)
         .help("length of WiredTiger's keys, in bytes")
         .nargs(1)
         .scan<'u', uint64_t>()
-        .default_value(default_key_len)
+        .default_value(static_cast<uint64_t>(default_key_len))
         .required();
 
     parser.add_argument("--val_len")
         .help("length of WiredTiger's values, in bytes")
         .nargs(1)
         .scan<'u', uint64_t>()
-        .default_value(default_val_len)
+        .default_value(static_cast<uint64_t>(default_val_len))
         .required();
 
     parser.add_argument("--adversarial_rate")
         .help("Percentage of adversarial queries in workload (0 to 100)")
         .nargs(1)
         .scan<'u', uint64_t>()
-        .default_value(0)
+        .default_value(static_cast<uint64_t>(0))
         .required();
 
     return parser;

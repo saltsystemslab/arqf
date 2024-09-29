@@ -156,19 +156,6 @@ inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
 #endif
 }
 
-static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
-{
-  const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
-  const uint64_t memento_mask =  (1ULL << memento_bits) - 1;
-  const uint64_t hash_mask = (1ULL << (quotient_bits + remainder_bits)) - 1;
-  auto y = x >> memento_bits;
-  uint64_t hash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
-  const uint64_t address = fast_reduce((hash & quotient_mask) << (32 - quotient_bits),
-      n_slots);
-  hash = (hash >> quotient_bits) | (address << remainder_bits);
-  return (hash << memento_bits) | (x & memento_mask);
-}
-
 template <typename t_itr, typename... Args>
 inline ARQF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args... args)
 {
@@ -189,8 +176,8 @@ inline ARQF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args.
     while ((1ULL << memento_bits) < max_range_size)
         memento_bits++;
     memento_bits = memento_bits < 2 ? 2 : memento_bits;
-    const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 2.125);
-    if (bpk * load_factor - memento_bits - 2.125 < 0) {
+    const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 3.125);
+    if (bpk * load_factor - memento_bits - 3.125 < 0) {
         abort();
     }
     uint32_t key_size = 0;
@@ -204,7 +191,7 @@ inline ARQF *init_qf(const t_itr begin, const t_itr end, const double bpk, Args.
     splinterdb* db;
     qf_init_splinterdb(&db, &data_cfg, &splinterdb_cfg, "rhm");
     ARQF* arqf = (ARQF*)malloc(sizeof(ARQF));
-    arqf_init_with_rhm(arqf, db, n_slots, key_size, memento_bits, seed, false);
+    arqf_init_with_rhm(arqf, db, n_slots, key_size, memento_bits, seed, true);
 
     start_timer(build_time);
 

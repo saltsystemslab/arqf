@@ -21,12 +21,10 @@
 
 #define NUM_SLOTS_TO_LOCK (1ULL<<16)
 
-bool qf_initfile(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t
-								 value_bits, enum qf_hashmode hash, uint32_t seed, const char*
-								 filename)
+bool qf_initfile(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits,
+                 enum qf_hashmode hash, uint32_t seed, const char* filename, bool expandable)
 {
-	uint64_t total_num_bytes = qf_init(qf, nslots, key_bits, value_bits, hash,
-																		 seed, NULL, 0);
+	uint64_t total_num_bytes = qf_init(qf, nslots, key_bits, value_bits, hash, seed, NULL, 0, expandable);
 
 	int ret;
 	qf->runtimedata = (qfruntime *)calloc(sizeof(qfruntime), 1);
@@ -60,7 +58,7 @@ bool qf_initfile(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t
 	qf->blocks = (qfblock *)(qf->metadata + 1);
 
 	uint64_t init_size = qf_init(qf, nslots, key_bits, value_bits, hash, seed,
-															 qf->metadata, total_num_bytes);
+                                 qf->metadata, total_num_bytes, expandable);
 	qf->runtimedata->f_info.filepath = (char *)malloc(strlen(filename) + 1);
 	if (qf->runtimedata->f_info.filepath == NULL) {
 		perror("Couldn't allocate memory for runtime f_info filepath.");
@@ -177,9 +175,8 @@ int64_t qf_resize_file(QF *qf, uint64_t nslots)
 	}
 
 	QF new_qf;
-	if (!qf_initfile(&new_qf, nslots, qf->metadata->key_bits,
-								 qf->metadata->value_bits, qf->metadata->hash_mode,
-								 qf->metadata->seed, new_filename))
+	if (!qf_initfile(&new_qf, nslots, qf->metadata->key_bits, qf->metadata->value_bits,
+                     qf->metadata->hash_mode, qf->metadata->seed, new_filename, qf->metadata->is_expandable))
 		return false;
 	if (qf->runtimedata->auto_resize)
 		qf_set_auto_resize(&new_qf, true);

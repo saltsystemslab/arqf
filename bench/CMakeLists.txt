@@ -23,6 +23,8 @@ list(APPEND SUCCINCT_LIBS "sux" "sdsl-lite")
 list(APPEND Targets "memento" "bucketing" "grafite" "surf" "rosetta" "proteus" "snarf" "rencoder" "arqf")
 list(APPEND x86Targets "surf" "rosetta" "proteus" "rencoder")
 
+find_library(WIREDTIGER_LIB NAMES wiredtiger libwiredtiger PATHS ../external/wiredtiger/build)
+
 set(CMAKE_CXX_STANDARD 17)
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
@@ -47,21 +49,29 @@ function(compile_bench ds)
 
     if (ds MATCHES "arqf")
       add_executable(bench_adaptive_arqf_splinterdb filters_benchmark/bench_adaptive_arqf_splinterdb.cpp)
-      target_include_directories(bench_adaptive_arqf_splinterdb PUBLIC /home/chesetti/local/include)
+      target_include_directories(bench_adaptive_arqf_splinterdb PUBLIC ../adaptiveqf/external/splinterdb/include/)
       target_link_libraries(bench_adaptive_arqf_splinterdb argparse ${WIREDTIGER_LIB})
 
       add_executable(bench_adaptive_arqf_inmem filters_benchmark/bench_adaptive_arqf_inmem.cpp)
-      target_include_directories(bench_adaptive_arqf_inmem PUBLIC /home/chesetti/local/include)
+      target_include_directories(bench_adaptive_arqf_inmem PUBLIC ../adaptiveqf/external/splinterdb/include/)
       target_link_libraries(bench_adaptive_arqf_inmem argparse ${WIREDTIGER_LIB})
 
       add_executable(bench_adaptive_arqf_wiredtiger filters_benchmark/bench_adaptive_arqf_wiredtiger.cpp)
-      target_include_directories(bench_adaptive_arqf_wiredtiger PUBLIC /home/chesetti/local/include)
+      target_include_directories(bench_adaptive_arqf_wiredtiger PUBLIC ../adaptiveqf/external/splinterdb/include/)
       target_link_libraries(bench_adaptive_arqf_wiredtiger argparse ${WIREDTIGER_LIB})
+
+      add_executable(bench_expandable_adaptive_arqf_splinterdb filters_benchmark/bench_expandable_adaptive_arqf_splinterdb.cpp)
+      target_include_directories(bench_expandable_adaptive_arqf_splinterdb PUBLIC ../adaptiveqf/external/splinterdb/include/)
+      target_link_libraries(bench_expandable_adaptive_arqf_splinterdb argparse ${WIREDTIGER_LIB})
+
+      add_executable(bench_expandable_adaptive_arqf_inmem filters_benchmark/bench_expandable_adaptive_arqf_inmem.cpp)
+      target_include_directories(bench_expandable_adaptive_arqf_inmem PUBLIC ../adaptiveqf/external/splinterdb/include/)
+      target_link_libraries(bench_expandable_adaptive_arqf_inmem argparse ${WIREDTIGER_LIB})
     endif()
 
     if (ds MATCHES "memento")
         add_library(mementolib STATIC ./filters/Memento/src/memento.c ./filters/Memento/src/hashutil.c)
-        target_include_directories(mementolib PUBLIC ./filters/Memento/include)
+        target_include_directories(mementolib PUBLIC ./filters/Memento/include ../adaptiveqf/external/splinterdb/include/)
         target_compile_options(mementolib PUBLIC -Ofast -msse4.2 -D__SSE4_2_)
         target_link_libraries(bench_memento mementolib)
 
@@ -95,6 +105,9 @@ function(compile_bench ds)
 
       target_link_libraries(bench_adaptive_arqf_inmem arqflib) 
       target_compile_options(bench_adaptive_arqf_inmem INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+
+      target_link_libraries(bench_expandable_adaptive_arqf_inmem arqflib) 
+      target_compile_options(bench_expandable_adaptive_arqf_inmem INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 
       target_link_libraries(bench_adaptive_arqf_wiredtiger arqflib) 
       target_compile_options(bench_adaptive_arqf_wiredtiger INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
@@ -155,8 +168,6 @@ function(compile_bench ds)
         target_compile_options(bench_rencoder PRIVATE -mcmodel=medium -mavx512f -O2)
     endif()
 endfunction(compile_bench)
-
-find_library(WIREDTIGER_LIB NAMES wiredtiger libwiredtiger PATHS ../external/wiredtiger/build)
 
 foreach(ds ${Targets})
     compile_bench(${ds})

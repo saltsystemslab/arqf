@@ -112,13 +112,15 @@ inline void check_iteration_validity(QF *qf, uint64_t *hashes, uint64_t nkeys)
       }
     }
 
-    for (uint64_t i=1; i<nkeys; i++) {
-      uint64_t k = (hashes[i] + hashes[i-1]) >> 1;
-      if (k == hashes[i] || k == hashes[i-1]) continue;
-      if (qf_point_query(qf, k, QF_KEY_IS_HASH | QF_NO_LOCK) == 1) {
-        abort();
-      }
+  for (uint64_t i = 1; i < nkeys; i++) {
+    uint64_t k = (hashes[i] + hashes[i - 1]) >> 1;
+    if (std::binary_search(hashes, hashes + nkeys, k,
+                [=](const auto& lhs, const auto& rhs) { return qf_hash_cmp(qf, lhs, rhs) < 0; }))
+        continue;
+    if (qf_point_query(qf, k, QF_KEY_IS_HASH | QF_NO_LOCK) == 1) {
+      abort();
     }
+  }
   printf("sanity passed\n");
 
 #if 0
@@ -212,7 +214,7 @@ inline WtArqf *init_qf(const t_itr begin, const t_itr end, const double bpk, Arg
         return x;
     });
     uint64_t nkeys  = key_hashes.size();
-    boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
+    std::sort(key_hashes.begin(), key_hashes.end(), [=](const auto& lhs, const auto& rhs) { return qf_hash_cmp(qf->qf, lhs, rhs) < 0; });
 
     int retcode = WtArqf_bulk_load(qf, &key_hashes[0], &keys[0], key_hashes.size(), 0);
     if (retcode < 0) {

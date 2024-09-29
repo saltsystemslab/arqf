@@ -11,10 +11,10 @@
 #define BITMASK(nbits) \
   ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
 
-int InMemArqf_init(InMemArqf* arqf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed) {
+int InMemArqf_init(InMemArqf* arqf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed, bool expandable) {
   QF* qf;
   qf = (QF*)malloc(sizeof(QF));
-  qf_malloc(qf, nslots, key_bits, value_bits, QF_HASH_DEFAULT, seed);
+  qf_malloc(qf, nslots, key_bits, value_bits, QF_HASH_DEFAULT, seed, expandable);
 
   arqf->qf = qf;
   return 0;
@@ -60,12 +60,11 @@ inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_si
   return fingerprint_size;
 }
 
-
 #define POINT_QUERY 0
 #define LEFT_PREFIX 1
 #define RIGHT_PREFIX 2
 
-inline bool should_adapt_keepsake(
+static inline bool should_adapt_keepsake(
     uint64_t *colliding_keys,
     uint64_t num_colliding_keys,
     uint64_t fp_key,
@@ -77,9 +76,12 @@ inline bool should_adapt_keepsake(
   for (uint64_t i=0; i < num_colliding_keys; i++) {
     uint64_t colliding_key = colliding_keys[i];
     uint64_t collision_memento = colliding_key & BITMASK(memento_size);
-    if (query_type == LEFT_PREFIX && collision_memento >= fp_memento) return true;
-    else if (query_type == RIGHT_PREFIX && collision_memento <= fp_memento) return true;
-    else if (query_type == POINT_QUERY && collision_memento == fp_memento) return true;
+    if (query_type == LEFT_PREFIX && collision_memento >= fp_memento)
+        return true;
+    else if (query_type == RIGHT_PREFIX && collision_memento <= fp_memento)
+        return true;
+    else if (query_type == POINT_QUERY && collision_memento == fp_memento)
+        return true;
   }
   assert(query_type != POINT_QUERY); // If point query doesn't find fp_memento, we screwed up the query.
   return false;
@@ -176,11 +178,10 @@ inline int adapt_keepsake(
   return 0;
 }
 
-inline int  maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_hash, int query_type) {
+inline int maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_hash, int query_type) {
   const uint64_t quotient_size = arqf->qf->metadata->quotient_bits;
   const uint64_t remainder_size = arqf->qf->metadata->key_remainder_bits;
   const uint64_t memento_size = arqf->qf->metadata->value_bits;
-  
 
   uint64_t colliding_fingerprint;
   uint64_t collision_index;
@@ -189,9 +190,14 @@ inline int  maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_h
 
   int ret = find_colliding_fingerprint(
       arqf->qf, fp_hash, &colliding_fingerprint, &collision_index, &num_ext_bits, &collision_runend_index);
-  if (ret != 0) return 0; // There was no need to adapt this keepsake, so consider as adapted.
+  if (ret != 0)
+      return 0; // There was no need to adapt this keepsake, so consider as adapted.
 
   if (arqf->qf->metadata->noccupied_slots > 0.999 * arqf->qf->metadata->xnslots) {
+    if (qf_is_auto_resize_enabled(arqf->qf)) {
+        // Expand
+        qf_resize_malloc(arqf->qf, arqf->qf->metadata->nslots * 2);
+    }
     // printf("Hit space limit %llu %llu\n", arqf->qf->metadata->noccupied_slots, arqf->qf->metadata->xnslots);
     return -1; // not enough space;
   }

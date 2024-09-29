@@ -127,19 +127,6 @@ __attribute__((always_inline)) static inline uint32_t fast_reduce(uint32_t hash,
   return (uint32_t)(((uint64_t)hash * n) >> 32);
 }
 
-static inline uint64_t memento_hash(uint64_t x, uint64_t n_slots, uint64_t quotient_bits, uint64_t remainder_bits, uint64_t memento_bits, uint64_t seed)
-{
-  const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
-  const uint64_t memento_mask = (1ULL << memento_bits) - 1;
-  const uint64_t hash_mask = (1ULL << (quotient_bits + remainder_bits)) - 1;
-  auto y = x >> memento_bits;
-  uint64_t hash = MurmurHash64A(((void*)&y), sizeof(y), seed) & hash_mask;
-  const uint64_t address = fast_reduce((hash & quotient_mask) << (32 - quotient_bits),
-      n_slots);
-  hash = (hash >> quotient_bits) | (address << remainder_bits);
-  return (hash << memento_bits) | (x & memento_mask);
-}
-
 template <typename t_itr, typename... Args>
 inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk, Args... args)
 {
@@ -160,8 +147,8 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk
   while ((1ULL << memento_bits) < max_range_size)
     memento_bits++;
   memento_bits = memento_bits < 2 ? 2 : memento_bits;
-  const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 2.125);
-  if (bpk * load_factor - memento_bits - 2.125 < 0) {
+  const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 3.125);
+  if (bpk * load_factor - memento_bits - 3.125 < 0) {
     abort();
   }
   uint32_t key_size = 0;
@@ -171,7 +158,7 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk
   std::cerr << "key_size=" << key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
 
   InMemArqf* arqf = new InMemArqf();
-  InMemArqf_init(arqf, n_slots, key_size, memento_bits, seed, false);
+  InMemArqf_init(arqf, n_slots, key_size, memento_bits, seed, true);
   // qf_set_auto_resize(qf, true);
 
   start_timer(build_time);
@@ -179,8 +166,9 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk
   auto key_hashes = std::vector<uint64_t>(n_items);
   std::transform(begin, end, key_hashes.begin(), [&](auto x) {
     uint64_t hash = arqf_hash(arqf->qf, x);
-    uint64_t mask = 1ULL << (arqf->qf->metadata->quotient_bits + arqf->qf->metadata->bits_per_slot);
-    return hash & (mask - 1);
+    return hash & BITMASK(arqf->qf->metadata->quotient_bits 
+                          + arqf->qf->metadata->value_bits 
+                          + arqf->qf->metadata->key_remainder_bits);
   });
   auto keys = std::vector<uint64_t>(n_items);
   std::transform(begin, end, keys.begin(), [&](auto x) {
@@ -305,3 +293,4 @@ int main(int argc, char const* argv[])
   print_test();
   return 0;
 }
+

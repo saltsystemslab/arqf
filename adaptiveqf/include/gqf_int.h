@@ -94,12 +94,14 @@ extern "C" {
 		uint64_t key_remainder_bits;
 		uint64_t bits_per_slot;
 		uint64_t quotient_bits;
+		uint64_t orig_quotient_bits;
 		uint64_t quotient_remainder_bits;
 		__uint128_t range;
 		uint64_t nblocks;
 		uint64_t nelts;
 		uint64_t ndistinct_elts;
 		uint64_t noccupied_slots;
+        bool is_expandable;
 	} quotient_filter_metadata;
 
 	typedef quotient_filter_metadata qfmetadata;
@@ -137,14 +139,14 @@ extern "C" {
   typedef struct quotient_filter_iterator {
     const QF* qf;
     uint64_t run;               // current quotient
-    uint64_t current_remainder; // current remainder
-    uint64_t current_memento;   // current memento
+    uint64_t fp;                // current fingerprint
+    uint64_t fp_len;            // length of the hash
+    uint64_t memento;           // current memento
 
     uint64_t current;           // current slot
     uint64_t intra_slot_offset; // starting bit of current memento in current slot
-    uint64_t num_extensions;
 
-    uint64_t cur_start_index; // start of current quotient run(?)
+    uint64_t cur_start_index;   // start of current quotient run(?)
     uint16_t cur_length;
     uint32_t num_clusters;
     cluster_data* c_info;

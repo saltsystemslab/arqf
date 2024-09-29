@@ -24,13 +24,12 @@ static inline void error_check(int ret)
   }
 }
 
-int WtArqf_init(
-    WtArqf* arqf, uint64_t wt_buffer_pool_size_mb,
-    uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed)
+int WtArqf_init(WtArqf* arqf, uint64_t wt_buffer_pool_size_mb, uint64_t nslots,
+                uint64_t key_bits, uint64_t value_bits, uint64_t seed, bool expandable)
 {
   QF* qf;
   qf = (QF*)malloc(sizeof(QF));
-  qf_malloc(qf, nslots, key_bits, value_bits, QF_HASH_DEFAULT, seed);
+  qf_malloc(qf, nslots, key_bits, value_bits, QF_HASH_DEFAULT, seed, expandable);
   arqf->qf = qf;
 
   WT_CONNECTION* conn;

@@ -204,8 +204,8 @@ inline QF* init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
   while ((1ULL << memento_bits) < max_range_size)
     memento_bits++;
   memento_bits = memento_bits < 2 ? 2 : memento_bits;
-  const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 2.125);
-  if (bpk * load_factor - memento_bits - 2.125 < 0) {
+  const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 3.125);
+  if (bpk * load_factor - memento_bits - 3.125 < 0) {
     abort();
   }
   uint32_t key_size = 0;
@@ -215,7 +215,7 @@ inline QF* init_qf(const t_itr begin, const t_itr end, const double bpk, Args...
   std::cerr << "key_size=" << key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
 
   QF* qf = (QF*)malloc(sizeof(QF));
-  qf_malloc(qf, n_slots, key_size, memento_bits, QF_HASH_DEFAULT, seed, false);
+  qf_malloc(qf, n_slots, key_size, memento_bits, QF_HASH_DEFAULT, seed, true);
   // qf_set_auto_resize(qf, true);
 
   start_timer(build_time);

@@ -86,7 +86,7 @@ extern "C" {
 	 */
 	uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t
 									 value_bits, enum qf_hashmode hash, uint32_t seed, void*
-									 buffer, uint64_t buffer_len);
+									 buffer, uint64_t buffer_len, bool expandable);
 
 	/* Create a CQF in "buffer". Note that this does not initialize the
 	 contents of bufferss Use this function if you have read a CQF, e.g.
@@ -113,8 +113,8 @@ extern "C" {
 	************************************/
 	
 	/* Initialize the CQF and allocate memory for the CQF. */
-	bool qf_malloc(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t
-								 value_bits, enum qf_hashmode hash, uint32_t seed);
+	bool qf_malloc(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits,
+                   enum qf_hashmode hash, uint32_t seed, bool expandable);
 
 	bool qf_free(QF *qf);
 
@@ -123,7 +123,7 @@ extern "C" {
 	 * Return value:
 	 *    >= 0: number of keys copied during resizing.
 	 * */
-	int qf_resize_malloc(QF *qf, uint64_t nslots);
+	int64_t qf_resize_malloc(QF *qf, uint64_t nslots);
 
 	/* Turn on automatic resizing.  Resizing is performed by calling
 		 qf_resize_malloc, so the CQF must meet the requirements of that
@@ -291,7 +291,7 @@ extern "C" {
 	 *   = QFI_INVALID: iterator has reached end.
 	 */
 	//int qfi_get_hash(const QFi *qfi, uint64_t *hash, uint64_t *count);
-	int qfi_get_hash(const QFi *qfi, uint64_t *rem, uint64_t *ext, int *ext_len, uint64_t *count);
+	int qfi_get_hash(const QFi *qfi, uint64_t *hash, uint32_t *hash_len, uint64_t *memento);
 	int qfi_get_memento_hash(const QFi *qfi, uint64_t *hash);
 
 	/* Advance to next entry.
@@ -357,7 +357,9 @@ extern "C" {
   /* Memento refers to the suffix of the key */
   /* We use the same API as the memento range filter to reuse test infra */
 
-  uint64_t arqf_hash(QF* qf, uint64_t x);
+  uint64_t arqf_hash(const QF* qf, uint64_t x);
+
+  uint64_t arqf_hash_bulk(const QF* qf, uint64_t x);
 
     /* Bulk load a set of keys into the filter. The list `sorted_hashes` must 
      * be a list of key hashes sorted in increasing order of (1) their slot

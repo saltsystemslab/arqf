@@ -26,7 +26,7 @@ struct adaptive_range_quotient_filter {
    * Will allocate the required bytes using malloc.
    * A SplinterDB instance will be created at the passed path to be used as a reverse hash map.
    **/
-int arqf_init_with_rhm(ARQF* arqf, splinterdb* db, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed);
+int arqf_init_with_rhm(ARQF* arqf, splinterdb* db, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed, bool expandable);
 
 /*
    * Bulk load the RHM and filter with the keys and hashes.

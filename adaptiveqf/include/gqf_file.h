@@ -12,9 +12,8 @@ extern "C" {
 #endif
 
 	/* Initialize a file-backed (i.e. mmapped) CQF at "filename". */
-	bool qf_initfile(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t
-									value_bits, enum qf_hashmode hash, uint32_t seed, const char*
-									filename);
+    bool qf_initfile(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits,
+                     enum qf_hashmode hash, uint32_t seed, const char* filename, bool expandable);
 
 #define QF_USEFILE_READ_ONLY (0x01)
 #define QF_USEFILE_READ_WRITE (0x02)

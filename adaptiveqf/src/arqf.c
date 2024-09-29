@@ -8,13 +8,13 @@
 #define BITMASK(nbits) \
   ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
 
-int arqf_init_with_rhm(ARQF* arqf, splinterdb* rhm, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed)
+int arqf_init_with_rhm(ARQF* arqf, splinterdb* rhm, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed, bool expandable)
 {
   QF* qf;
-  qf = (QF*)malloc(sizeof(QF));
-  qf_malloc(qf, nslots, key_bits, value_bits, QF_HASH_DEFAULT, seed);
+  qf = (QF*) malloc(sizeof(QF));
+  qf_malloc(qf, nslots, key_bits, value_bits, QF_HASH_DEFAULT, seed, expandable);
 
-  arqf->db_result = (splinterdb_lookup_result*)malloc(sizeof(splinterdb_lookup_result));
+  arqf->db_result = (splinterdb_lookup_result*) malloc(sizeof(splinterdb_lookup_result));
   splinterdb_lookup_result_init(rhm, arqf->db_result, 0, NULL);
   arqf->rhm = rhm;
   arqf->qf = qf;
@@ -45,7 +45,7 @@ int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t
 }
 
 // x, y must be fingerprints (no mementos)
-inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_size, int remainder_size, int memento_size) {
+static inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_size, int remainder_size, int memento_size) {
   if (x == y) {
     return 255;
   }
@@ -66,7 +66,7 @@ inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_si
 #define LEFT_PREFIX 1
 #define RIGHT_PREFIX 2
 
-inline bool should_adapt_keepsake(
+static inline bool should_adapt_keepsake(
     uint64_t *colliding_keys,
     uint64_t num_colliding_keys,
     uint64_t fp_key,
@@ -78,17 +78,18 @@ inline bool should_adapt_keepsake(
   for (uint64_t i=0; i < num_colliding_keys; i++) {
     uint64_t colliding_key = colliding_keys[i];
     uint64_t collision_memento = colliding_key & BITMASK(memento_size);
-    if (query_type == LEFT_PREFIX && collision_memento >= fp_memento) return true;
-    else if (query_type == RIGHT_PREFIX && collision_memento <= fp_memento) return true;
-    else if (query_type == POINT_QUERY && collision_memento == fp_memento) return true;
+    if (query_type == LEFT_PREFIX && collision_memento >= fp_memento)
+        return true;
+    else if (query_type == RIGHT_PREFIX && collision_memento <= fp_memento)
+        return true;
+    else if (query_type == POINT_QUERY && collision_memento == fp_memento)
+        return true;
   }
   assert(query_type != POINT_QUERY); // If point query doesn't find fp_memento, we screwed up the query.
   return false;
 }
 
-
-
-inline int adapt_keepsake(
+static inline int adapt_keepsake(
     ARQF *arqf, 
     uint64_t *colliding_keys,
     uint64_t num_colliding_keys,
@@ -109,7 +110,7 @@ inline int adapt_keepsake(
   const uint64_t fp_prefix = fp_hash >> memento_size;
 
   uint64_t current_keepsake_end = keepsake_end;
-  uint64_t last_overwritten_index = keepsake_start-1;
+  uint64_t last_overwritten_index = keepsake_start-1;   // Underflow issues?
   uint8_t min_required_fingerprint_size = 0;
   // TODO(Chesetti): Erase old fingerprint
   char buffer[MAX_KEY_SIZE];
@@ -119,7 +120,7 @@ inline int adapt_keepsake(
   for (int i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
     uint64_t collision_hash = arqf_hash(arqf->qf, key_in_keepsake);
-    uint64_t collision_prefix = (collision_hash) >> memento_size;
+    uint64_t collision_prefix = collision_hash >> memento_size;
     if (collision_prefix == fp_prefix) {
 #if DEBUG
       if ((fp_key >> memento_size) != key_in_keepsake >> memento_size) {
@@ -128,7 +129,7 @@ inline int adapt_keepsake(
 #endif
       continue;
     }
-    uint64_t collision_memento = (collision_hash) & BITMASK(memento_size);
+    uint64_t collision_memento = collision_hash & BITMASK(memento_size);
     uint8_t new_fingerprint_size = min_diff_fingerprint_size(fp_prefix, collision_prefix, quotient_size, remainder_size, memento_size);
     if (min_required_fingerprint_size < new_fingerprint_size) min_required_fingerprint_size = new_fingerprint_size;
   }
@@ -182,7 +183,7 @@ inline int adapt_keepsake(
   return 0;
 }
 
-inline int  maybe_adapt_keepsake(ARQF *arqf, uint64_t fp_key, uint64_t fp_hash, int query_type) {
+static inline int maybe_adapt_keepsake(ARQF *arqf, uint64_t fp_key, uint64_t fp_hash, int query_type) {
   const uint64_t quotient_size = arqf->qf->metadata->quotient_bits;
   const uint64_t remainder_size = arqf->qf->metadata->key_remainder_bits;
   const uint64_t memento_size = arqf->qf->metadata->value_bits;
@@ -194,9 +195,14 @@ inline int  maybe_adapt_keepsake(ARQF *arqf, uint64_t fp_key, uint64_t fp_hash, 
 
   int ret = find_colliding_fingerprint(
       arqf->qf, fp_hash, &colliding_fingerprint, &collision_index, &num_ext_bits, &collision_runend_index);
-  if (ret != 0) return 0; // There was no need to adapt this keepsake, so consider as adapted.
+  if (ret != 0)
+    return 0; // There was no need to adapt this keepsake, so consider as adapted.
 
   if (arqf->qf->metadata->noccupied_slots > 0.999 * arqf->qf->metadata->xnslots) {
+    if (qf_is_auto_resize_enabled(arqf->qf)) {
+        // Expand
+        qf_resize_malloc(arqf->qf, arqf->qf->metadata->nslots * 2);
+    }
     // printf("Hit space limit %llu %llu\n", arqf->qf->metadata->noccupied_slots, arqf->qf->metadata->xnslots);
     return -1; // not enough space;
   }
@@ -204,9 +210,8 @@ inline int  maybe_adapt_keepsake(ARQF *arqf, uint64_t fp_key, uint64_t fp_hash, 
   char buffer[MAX_KEY_SIZE];
   slice db_query = padded_slice(&colliding_fingerprint, MAX_KEY_SIZE, sizeof(colliding_fingerprint), buffer, 0);
   splinterdb_lookup(arqf->rhm, db_query, arqf->db_result);
-  if (!splinterdb_lookup_found(arqf->db_result)) {
+  if (!splinterdb_lookup_found(arqf->db_result))
     abort(); // Improperly maintained RHM.
-  }
   slice result_val;
   splinterdb_lookup_result_value(arqf->db_result, &result_val);
 

@@ -5,6 +5,7 @@ project(arqf
 # TODO(chesetti): Add debug/profile/ARCH options.
 # TODO(chesetti): Figure out if link dependencies should be PUBLIC or PRIVATE.
 
+add_compile_options(-fpermissive)
 
 set(SPLINTERDB_PATH ./external/splinterdb/build/release/lib)
 set(CMAKE_CXX_STANDARD 17)
