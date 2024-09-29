@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <iostream>
 #include <argparse/argparse.hpp>
+#include <vector>
 #include "bench_utils.hpp"
 #include "splinterdb/platform_linux/public_platform.h"
 
@@ -44,6 +45,18 @@ static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, Simpl
         x ^= 1;
     }
     optimizer_hack += x;
+}
+
+static inline InputKeys<uint64_t> fetch_dataset_from_db(WT_CURSOR *cursor)
+{
+    uint8_t key_buf[sizeof(uint64_t) + 1];
+    InputKeys<uint64_t> res;
+    error_check(cursor->reset(cursor));
+    while ((cursor->next(cursor)) == 0) {
+        error_check(cursor->get_key(cursor, key_buf));
+        res.push_back(*reinterpret_cast<uint64_t *>(key_buf));
+    }
+    return res;
 }
 
 static inline void fetch_successor_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l)
@@ -201,6 +214,97 @@ void experiment_adaptivity(
     test_out.add_measure("false_positives", fp);
     test_out.add_measure("num_fp_keys", fp_count.size());
     metadata_f(f);
+    std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+}
+
+const uint32_t expansion_count = 8;
+
+template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+void experiment_expandability(
+    InitFun init_f, 
+    InsertFun insert_f, 
+    RangeFun range_f, 
+    AdaptFun adapt_f, 
+    SizeFun size_f, 
+    MetadataFun metadata_f, 
+    const double param, 
+    const uint32_t reconstruct_period,
+    InputKeys<key_type> &keys, 
+    Workload<key_type> &queries, 
+    Args... args)
+{
+    const uint64_t N = keys.size();
+    const uint64_t n_queries = queries.size() / (expansion_count + 1);
+    uint64_t current_dataset_size = N >> expansion_count;
+    auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
+
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+
+    for (uint32_t expansion = 0; expansion <= expansion_count; expansion++) {
+        std::string expansion_str = std::to_string(expansion);
+        auto size = size_f(f);
+        test_out.add_measure(std::string("size_") + expansion_str, size);
+        test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, current_dataset_size));
+
+        if (expansion > 0) {
+            if (reconstruct_period > 0 && expansion % reconstruct_period == 0) {
+                current_dataset_size = std::min(current_dataset_size * 2, N);
+                std::cerr << "CANNOT EXPAND, RECONSTRUCTING INSTEAD" << std::endl;
+                f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
+                std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
+            }
+            else {
+                std::cerr << "START EXPANSION PROCESS" << std::endl;
+                std::cerr << "current_dataset_size=" << current_dataset_size << std::endl;
+                start_timer(expansion_time);
+                for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++)
+                    insert_f(f, keys[current_dataset_size + i]);
+                measure_timer(expansion_time);
+                test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
+                current_dataset_size = std::min(current_dataset_size * 2, N);
+                std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
+            }
+        }
+
+        auto fp = 0, fn = 0, fa = 0;
+        std::map<uint64_t, uint64_t> fp_count;
+        std::cerr << "START QUERY PROCESS" << std::endl;
+        start_timer(query_time);
+        for (uint32_t i = expansion * n_queries; i < (expansion + 1) * n_queries; i++) {
+            const auto [left, right, original_result] = queries[i];
+
+            bool query_result = range_f(f, left, right);
+            if (query_result && !original_result) {
+                if (!adapt_f(f, left, right))
+                  fa++;
+#if DEBUG
+                else {
+                  query_result = range_f(f, left, right);
+                  if (query_result)
+                    std::cerr << "[!] alert, adapting " <<left<<" "<<right<<" failed!" << std::endl;
+                }
+#endif
+                fp_count[left]++;
+                fp++;
+            }
+            else if (!query_result && original_result) {
+                std::cerr << "[!] alert, found false negative!" << std::endl;
+                fn++;
+            }
+        }
+        measure_timer(query_time);
+        std::cerr << "DONE WITH QUERY PROCESS" << std::endl;
+
+        test_out.add_measure(std::string("query_time_" + expansion_str), t_duration_query_time);
+        test_out.add_measure(std::string("false_positives_" + expansion_str), fp);
+        test_out.add_measure(std::string("fpr_" + expansion_str), static_cast<double>(fp) / queries.size());
+        test_out.add_measure(std::string("false_neg_" + expansion_str), fn);
+        test_out.add_measure(std::string("n_keys_" + expansion_str), current_dataset_size);
+        test_out.add_measure(std::string("n_queries_" + expansion_str), n_queries);
+        test_out.add_measure(std::string("num_fp_keys_" + expansion_str), fp_count.size());
+        metadata_f(f);
+    }
+
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
@@ -388,6 +492,213 @@ void experiment_adaptivity_disk(
     test_out.add_measure("adversarial_rate", adversarial_rate);
     test_out.add_measure("num_adversarial_queries", num_adversarial_queries);
     metadata_f(f);
+    std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+    std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
+}
+
+
+template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+void experiment_expandability_disk(
+    InitFun init_f, 
+    InsertFun insert_f, 
+    RangeFun range_f, 
+    AdaptFun adapt_f, 
+    SizeFun size_f, 
+    MetadataFun metadata_f, 
+    const double param, 
+    const uint32_t reconstruct_period,
+    std::string wt_home,
+    InputKeys<key_type> &keys, 
+    Workload<key_type> &queries, 
+    Args... args)
+{
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<uint64_t> distr(1, (1ULL<<63)-1);
+
+    // Begin loading DB.
+    const uint32_t max_schema_len = 128;
+    const uint32_t max_conn_config_len = 128;
+
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
+
+    WT_CONNECTION *conn;
+    WT_SESSION *session;
+    WT_CURSOR *cursor;
+    char table_schema[max_schema_len];
+    char connection_config[max_conn_config_len];
+    sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
+    sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
+
+    error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
+    error_check(conn->open_session(conn, NULL, NULL, &session));
+    error_check(session->create(session, "table:bm", table_schema));
+    error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
+
+    SimpleBigInt big_int_k(key_len), big_int_v(val_len);
+    SimpleBigInt big_int_l(key_len), big_int_r(key_len);
+
+    std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
+
+    const uint64_t N = keys.size();
+    const uint64_t n_queries = queries.size() / (expansion_count + 1);
+    uint64_t current_dataset_size = N >> expansion_count;
+    auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
+
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+
+    for (uint32_t expansion = 0; expansion <= expansion_count; expansion++) {
+        std::string expansion_str = std::to_string(expansion);
+        auto size = size_f(f);
+        test_out.add_measure(std::string("size_") + expansion_str, size);
+        test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, current_dataset_size));
+
+        if (expansion > 0) {
+            if (reconstruct_period > 0 && expansion % reconstruct_period == 0) {
+                current_dataset_size = std::min(current_dataset_size * 2, N);
+                std::cerr << "CANNOT EXPAND, RECONSTRUCTING INSTEAD" << std::endl;
+                start_timer(expansion_time);
+                f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
+                measure_timer(expansion_time);
+                test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
+                std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
+            }
+            std::cerr << "START EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << std::endl;
+            start_timer(expansion_time);
+            for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++) {
+                SimpleBigInt big_int_k(key_len), big_int_v(val_len);
+                big_int_k = keys[current_dataset_size + i];
+                big_int_v.randomize();
+                insert_kv(cursor, reinterpret_cast<char *>(big_int_k.num), reinterpret_cast<char *>(big_int_v.num));
+                insert_f(f, keys[current_dataset_size + i]);
+            }
+            measure_timer(expansion_time);
+            test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
+            current_dataset_size = std::min(current_dataset_size * 2, N);
+            std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
+        }
+
+        auto fp = 0, fn = 0, fa = 0;
+        uint64_t num_db_fetches = 0;
+        uint64_t num_adapts = 0;
+        uint64_t fetch_from_db_duration_ns = 0;
+        uint64_t adapt_duration_ns = 0;
+        uint64_t query_index = 0;
+        uint64_t overall_query_duration = 0;
+
+        start_timer(warmup_time);
+        std::vector<std::pair<uint64_t, uint64_t> > adversaries;
+        std::vector<bool> adversary_result;
+        uint64_t num_warmup_queries = queries.size() / 2;
+        for (uint64_t i=0; i < num_warmup_queries; i++) {
+            auto q = queries[i];
+            const auto [left, right, original_result] = q;
+            bool query_result = range_f(f, left, right);
+            if (query_result) {
+                big_int_l = left;
+                big_int_r = right;
+
+                start_timer(db_fetch);
+                num_db_fetches++;
+                fetch_range_from_db(cursor, big_int_l, big_int_r);
+                measure_timer(db_fetch);
+                fetch_from_db_duration_ns += t_duration_db_fetch;
+
+                fp += !original_result;
+                if (!original_result) {
+                    start_timer(adapt_qf);
+                    if (!adapt_f(f, left, right)) {
+                        fa++;
+                    }
+                    measure_timer(adapt_qf);
+                    adapt_duration_ns += t_duration_adapt_qf;
+                    adversaries.push_back(std::pair<uint64_t, uint64_t>(left, right));
+                    adversary_result.push_back(original_result);
+                }
+            } else if (!query_result && original_result) {
+                std::cerr << "[!] alert, found false negative!" << std::endl;
+                fn++;
+            }
+        }
+        measure_timer(warmup_time);
+        uint64_t num_adversarial_queries = 0;
+        test_out.add_measure("adversary_set_size", adversaries.size());
+
+        test_out.add_measure(std::string("warmup_time_") + expansion_str, t_duration_warmup_time);
+        std::cout << "Finished warmup, collected "<< adversaries.size() << std::endl;
+
+        uint64_t adversary_freq = queries.size();
+        if (adversarial_rate != 0) {
+            adversary_freq = 1.0 / adversarial_rate; 
+        }
+        uint64_t adversary_idx = 0;
+
+        start_timer(query_time);
+        for (uint64_t i=num_warmup_queries; i < queries.size(); i++) {
+            auto q = queries[i];
+            const auto [l, r, orig] = q;
+            uint64_t left = l;
+            uint64_t right = r;
+            bool original_result = orig;
+
+            if (i % adversary_freq == 0) {
+                num_adversarial_queries++;
+                left = adversaries[adversary_idx].first;
+                right = adversaries[adversary_idx].second;
+                original_result = adversary_result[adversary_idx]; 
+                adversary_idx++;
+                if (adversary_idx == adversaries.size())
+                    adversary_idx = 0;
+            }
+
+            bool query_result = range_f(f, left, right);
+            if (query_result) {
+                big_int_l = left;
+                big_int_r = right;
+
+                start_timer(db_fetch);
+                num_db_fetches++;
+                fetch_range_from_db(cursor, big_int_l, big_int_r);
+                measure_timer(db_fetch);
+                fetch_from_db_duration_ns += t_duration_db_fetch;
+
+                fp += !original_result;
+                if (!original_result) {
+                    start_timer(adapt_qf);
+                    if (!adapt_f(f, left, right)) {
+                        fa++;
+                    }
+                    measure_timer(adapt_qf);
+                    adapt_duration_ns += t_duration_adapt_qf;
+                    adversaries.push_back(std::pair<uint64_t, uint64_t>(left, right));
+                    adversary_result.push_back(original_result);
+                }
+            } else if (!query_result && original_result) {
+                std::cerr << "[!] alert, found false negative!" << std::endl;
+                fn++;
+            }
+
+            test_out.add_measure(std::string("db_fetch_duration_ns_") + expansion_str, fetch_from_db_duration_ns);
+            test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
+        }
+        measure_timer(query_time);
+
+        test_out.add_measure(std::string("query_time_") + expansion_str, t_duration_query_time);
+        test_out.add_measure(std::string("false_positives_") + expansion_str, fp);
+        test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
+        test_out.add_measure(std::string("false_neg_") + expansion_str, fn);
+        test_out.add_measure(std::string("n_keys_") + expansion_str, current_dataset_size);
+        test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
+        test_out.add_measure(std::string("num_db_fetch_") + expansion_str, num_db_fetches);
+        test_out.add_measure(std::string("db_fetch_duration_ns_") + expansion_str, fetch_from_db_duration_ns);
+        test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
+        test_out.add_measure(std::string("adversarial_rate_") + expansion_str, adversarial_rate);
+        test_out.add_measure(std::string("num_adversarial_queries_") + expansion_str, num_adversarial_queries);
+        metadata_f(f);
+    }
+
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
 }

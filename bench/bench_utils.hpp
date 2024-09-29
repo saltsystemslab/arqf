@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <set>
@@ -30,6 +31,7 @@
 #include <cstring>
 #include <wiredtiger.h>
 #include "bigint.hpp"
+#include "splinterdb/platform_linux/public_platform.h"
 
 /**
  * This file contains some utility functions and data structures used in the benchmarks.
@@ -214,6 +216,7 @@ static void save_keys_to_db(InputKeys<KeyType> &keys, const std::string &file) {
     }
     error_check(conn->close(conn, NULL));
 }
+
 
 template<typename KeyType>
 static Workload<KeyType> read_workload_from_file(const std::string &l_keys, const std::string &r_keys) {

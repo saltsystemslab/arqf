@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <vector>
 #include "zipf.h"
 
@@ -42,6 +43,7 @@ auto default_n_keys = 200'000'000;
 auto default_n_queries = 10'000'000;
 auto default_range_size = std::vector<int>{0, 5, 10}; /* {point queries, 2^{5}, 2^{10}}*/
 auto default_corr_degree = 0.8;
+auto default_expansion_count = 0;
 
 InputKeys<uint64_t> keys_from_file = InputKeys<uint64_t>();
 
@@ -88,7 +90,7 @@ inline uint64_t MurmurHash64A(const void * key, int len, unsigned int s)
 	return h;
 }
 
-void save_keys(InputKeys<uint64_t> &keys, const std::string &file)
+void save_keys(InputKeys<uint64_t> &keys, const std::string &file, bool save_db=true)
 {
     if (save_binary) {
         write_to_binary_file(keys, file);
@@ -96,7 +98,8 @@ void save_keys(InputKeys<uint64_t> &keys, const std::string &file)
     else {
         save_keys_to_file(keys, file + ".txt");
     }
-    save_keys_to_db(keys, file);
+    if (save_db)
+        save_keys_to_db(keys, file);
 }
 
 void save_queries(Workload<uint64_t> &work, const std::string &l_keys, const std::string &r_keys = "", const std::string &res_keys = "")
@@ -345,6 +348,174 @@ Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<ui
     return q_out;
 }
 
+Workload<uint64_t> generate_synth_queries_exp(const std::string& qdist, InputKeys<uint64_t> &keys,
+                                              uint64_t n_queries, uint64_t min_range, uint64_t max_range,
+                                              const uint32_t expansion_count,
+                                              const double corr_degree, 
+                                              const long double stddev, 
+                                              const long zipf_batch_size=0, const uint64_t zipf_universe_size = UINT64_MAX) {
+    std::mt19937 shuffle_gen(seed - 1);
+    const uint64_t n_keys = keys.size();
+    std::shuffle(keys.begin(), keys.end(), shuffle_gen);
+    std::vector<std::tuple<uint64_t, uint64_t, bool>> q;
+    std::vector<uint64_t> middle_points;
+    if (qdist == "qnormal")
+        middle_points = generate_keys_normal(10 * n_queries, stddev);
+    else if (qdist == "quniform") {
+        middle_points = generate_keys_uniform(3 * n_queries);
+        std::shuffle(middle_points.begin(), middle_points.end(), shuffle_gen);
+    }
+    else if (qdist == "qzipfian") {
+        middle_points = generate_keys_zipfian(n_queries, 1.5, zipf_batch_size, zipf_universe_size-1);
+        std::shuffle(middle_points.begin(), middle_points.end(), shuffle_gen);
+    }
+    else // qdist == "qcorrelated"
+    {
+        middle_points.reserve(n_queries * (expansion_count + 1));
+        for (uint32_t expansion = 0; expansion <= expansion_count; expansion++) {
+            const uint64_t N = (n_keys >> (expansion_count - expansion));
+            auto i = 0;
+            while (i < n_queries) {
+                auto n = std::min<uint64_t>(N, n_queries - i);
+                std::copy(keys.begin() + (i % N),
+                          keys.begin() + (i % N) + n,
+                          middle_points.begin() + i + (expansion * n_queries));
+                i += n;
+            }
+        }
+    }
+    std::sort(keys.begin(), keys.begin() + (n_keys >> expansion_count));
+
+    std::mt19937 gen_range(seed);
+    std::uniform_int_distribution<uint64_t> range_distr(std::max(min_range, 1UL), max_range);
+
+    std::mt19937 gen_corr(seed + 1);
+    std::uniform_int_distribution<uint64_t> corr_distr(1, (1UL << std::lround(30 * (1 - corr_degree))));
+
+    std::mt19937 gen_pos_middle_points(seed + 2);
+    std::uniform_int_distribution<int> pos_distr(1, middle_points.size() - 1);
+
+    auto n_iterations = 0;
+    auto i = 0;
+    std::set<uint64_t> inclusion_checker;
+    uint64_t prev_N = 0;
+
+    {
+        const uint64_t N = (n_keys >> expansion_count);
+        for (uint64_t i = prev_N; i < N; i++) {
+            inclusion_checker.insert(keys[i]);
+        }
+        prev_N = N;
+
+        while (q.size() < n_queries) {
+            if (++n_iterations >= 100 * n_queries) {
+                std::string in;
+                std::cout << std::endl
+                          << "application seems stuck, close it or save less query? (y/n/save) ";
+                std::cin >> in;
+                if (in == "save")
+                    break;
+                else if (in == "y")
+                    throw std::runtime_error("error: timeout for the workload generation");
+                n_iterations = 0;
+            }
+
+            auto range_size = (min_range == max_range) ? min_range : static_cast<uint64_t>(range_distr(gen_range));
+
+            uint64_t left, right;
+
+            if (qdist == "quniform" || qdist == "qzipfian") {
+                std::tie(left, right) = point_to_range(middle_points[i++], range_size);
+                i -= (i >= middle_points.size() ? middle_points.size() : 0);
+            }
+            else if (qdist == "qnormal")
+                std::tie(left, right) = point_to_range(middle_points[pos_distr(gen_pos_middle_points)], range_size);
+            else // qdist == qcorrelated
+            {
+                auto p = middle_points[q.size()] + corr_distr(gen_corr);
+                std::tie(left, right) = point_to_range(p, range_size);
+            }
+            if (std::numeric_limits<uint64_t>::max() - left < range_size)
+                continue;
+
+            bool q_result;
+            if (range_size == 1) {
+                q_result = inclusion_checker.find(left) != inclusion_checker.end();
+            }
+            else {
+                auto it = inclusion_checker.lower_bound(left);
+                q_result = it != inclusion_checker.end() && *it <= right;
+            }
+
+            if (!allow_true_queries && q_result)
+                continue;
+
+            q.push_back({left, right, q_result});
+            printProgress(((double) q.size()) / ((expansion_count + 1) * n_queries));
+        }
+    }
+
+    for (uint32_t expansion = 0; expansion < expansion_count; expansion++) {
+        if (expansion) {
+            const uint64_t N = (n_keys >> (expansion_count - expansion - 1));
+            for (uint64_t i = prev_N; i < N; i++) {
+                inclusion_checker.insert(keys[i]);
+            }
+            prev_N = N;
+        }
+
+        while (q.size() < n_queries * (expansion + 2)) {
+            if (++n_iterations >= 100 * n_queries) {
+                std::string in;
+                std::cout << std::endl
+                          << "application seems stuck, close it or save less query? (y/n/save) ";
+                std::cin >> in;
+                if (in == "save")
+                    break;
+                else if (in == "y")
+                    throw std::runtime_error("error: timeout for the workload generation");
+                n_iterations = 0;
+            }
+
+            auto range_size = (min_range == max_range) ? min_range : static_cast<uint64_t>(range_distr(gen_range));
+
+            uint64_t left, right;
+
+            if (qdist == "quniform" || qdist == "qzipfian") {
+                std::tie(left, right) = point_to_range(middle_points[i++], range_size);
+                i -= (i >= middle_points.size() ? middle_points.size() : 0);
+            }
+            else if (qdist == "qnormal")
+                std::tie(left, right) = point_to_range(middle_points[pos_distr(gen_pos_middle_points)], range_size);
+            else // qdist == qcorrelated
+            {
+                auto p = middle_points[q.size()] + corr_distr(gen_corr);
+                std::tie(left, right) = point_to_range(p, range_size);
+            }
+            if (std::numeric_limits<uint64_t>::max() - left < range_size)
+                continue;
+
+            bool q_result;
+            if (range_size == 1) {
+                q_result = inclusion_checker.find(left) != inclusion_checker.end();
+            }
+            else {
+                auto it = inclusion_checker.lower_bound(left);
+                q_result = it != inclusion_checker.end() && *it <= right;
+            }
+
+            if (!allow_true_queries && q_result)
+                continue;
+
+            q.push_back({left, right, q_result});
+            printProgress(((double) q.size()) / ((expansion_count + 1) * n_queries));
+        }
+    }
+
+    return {q.begin(), q.end()};
+}
+
+
 Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<uint64_t> &keys,
                                           uint64_t n_queries, uint64_t range_size,
                                           const double corr_degree, const long double stddev) {
@@ -354,7 +525,7 @@ Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<ui
 void generate_synth_datasets(const std::vector<std::string> &kdist, const std::vector<std::string> &qdist,
                              uint64_t n_keys, uint64_t n_queries, uint64_t n_query_sets,
                              std::vector<int> range_size_list, const uint64_t zipf_universe_size = UINT64_MAX, 
-                             const double corr_degree = 0.8, const long double stddev = (long double) UINT64_MAX * 0.1,
+                             const double corr_degree = 0.8, const long double stddev = static_cast<long double>(UINT64_MAX * 0.1),
                              const long zipf_batch_size = 0) {
     std::vector<uint64_t> ranges(range_size_list.size());
     std::transform(range_size_list.begin(), range_size_list.end(), ranges.begin(), [](auto v) {
@@ -422,6 +593,91 @@ void generate_synth_datasets(const std::vector<std::string> &kdist, const std::v
         }
 
         save_keys(keys, root_path + "keys");
+        std::cout << "[+] keys wrote at " << root_path << std::endl;
+    }
+}
+
+void generate_synth_datasets_exp(const std::vector<std::string> &kdist, const std::vector<std::string> &qdist,
+                                 uint64_t n_keys, uint64_t n_queries, uint64_t n_query_sets,
+                                 std::vector<int> range_size_list, const uint32_t expansion_count,
+                                 const uint64_t zipf_universe_size = UINT64_MAX, 
+                                 const double corr_degree = 0.8, const long double stddev = static_cast<long double>(UINT64_MAX * 0.1),
+                                 const long zipf_batch_size = 0) {
+    assert(expansion_count > 0);
+    std::vector<uint64_t> ranges(range_size_list.size());
+    std::transform(range_size_list.begin(), range_size_list.end(), ranges.begin(), [](auto v) {
+        return (1ULL << v);
+    });
+
+    std::cout << "[+] starting dataset generation" << std::endl;
+    std::cout << "[+] n=" << n_keys << ", q=" << n_queries << std::endl;
+    std::cout << "[+] kdist=";
+    std::copy(kdist.begin(), kdist.end(), std::ostream_iterator<std::string>(std::cout, ","));
+    std::cout << std::endl
+              << "[+] qdist=";
+    std::copy(qdist.begin(), qdist.end(), std::ostream_iterator<std::string>(std::cout, ","));
+    std::cout << std::endl;
+    std::cout << "[+] corr_degree=" << corr_degree << std::endl;
+
+
+    for (const auto& k: kdist) {
+        std::string root_path = "./" + k + "/";
+        auto keys = (k == "kuniform") ? generate_keys_uniform(n_keys) : generate_keys_normal(n_keys, stddev);
+        std::cout << std::endl
+                  << "[+] generated `" << k << "` keys" << std::endl;
+        for (uint64_t qset = 0; qset < n_query_sets; qset++) {
+        for (const auto& q: qdist) {
+            for (auto i = 0; i < ranges.size(); i++) {
+                auto range_size = ranges[i];
+                Workload<uint64_t> queries;
+                if (q == "qtrue")
+                    queries = generate_true_queries(keys, n_queries, range_size);
+                else
+                    queries = generate_synth_queries_exp(q, keys, n_queries, range_size, range_size, expansion_count,
+                                                         corr_degree, stddev, zipf_batch_size, zipf_universe_size);
+                std::cout << std::endl
+                          << "[+] generated `" << q << "_" << range_size_list[i] << "` queries" << std::endl;
+
+                std::string queries_path;
+                if (n_query_sets == 0) {
+                  queries_path = root_path + std::to_string(range_size_list[i]) + "_" + q + "/";
+                } else {
+                  queries_path = root_path + std::to_string(range_size_list[i]) + "_" + q + "_trial_" + std::to_string(qset) + "/";
+                }
+                if (!create_dir_recursive(queries_path))
+                    throw std::runtime_error("error, impossible to create dir");
+
+                save_queries(queries, queries_path + "left", queries_path + "right", queries_path + "result");
+                std::cout << "[+] queries wrote at " << queries_path << std::endl;
+            }
+
+            if (mixed_queries)
+            {
+                auto range_size = ranges.back();
+                auto range_size_min = 1;
+
+                Workload<uint64_t> queries;
+                if (q == "qtrue")
+                    queries = generate_true_queries(keys, n_queries, range_size, true);
+                else
+                    queries = generate_synth_queries_exp(q, keys, n_queries, range_size, range_size, expansion_count,
+                                                         corr_degree, stddev, zipf_batch_size, zipf_universe_size);
+
+                auto queries_path = root_path + std::to_string(range_size_list.back()) + "M_" + q + "/"; /* mixed */
+                if (!create_dir_recursive(queries_path))
+                    throw std::runtime_error("error, impossible to create dir");
+
+                if (allow_true_queries)
+                    save_queries(queries, queries_path + "left", queries_path + "right", queries_path + "result");
+                else
+                    save_queries(queries, queries_path + "left", queries_path + "right");
+
+                std::cout << std::endl << "[+] queries wrote at " << queries_path << std::endl;
+            }
+        }
+        }
+
+        save_keys(keys, root_path + "keys", false);
         std::cout << "[+] keys wrote at " << root_path << std::endl;
     }
 }
@@ -551,6 +807,55 @@ void generate_real_dataset(const std::string& file, uint64_t n_queries, std::vec
 
 }
 
+template <typename value_type = uint64_t>
+void generate_real_dataset_exp(const std::string& file, uint64_t n_queries, std::vector<int> range_size_list, const uint32_t expansion_count) {
+    assert(expansion_count > 0);
+    std::vector<uint64_t> ranges(range_size_list.size());
+    std::transform(range_size_list.begin(), range_size_list.end(), ranges.begin(), [](auto v) {
+        return (1ULL << v);
+    });
+
+    std::string base_filename = file.substr(file.find_last_of("/\\") + 1);
+    std::string::size_type pos = base_filename.find('_');
+    std::string dir_name = (pos != std::string::npos) ? base_filename.substr(0, pos) : base_filename;
+    std::string root_path = "./" + dir_name + "/";
+    auto temp_data = read_data_binary<value_type>(file);
+    auto all_data = std::vector<uint64_t>(temp_data.begin(), temp_data.end());
+    assert(all_data.size() > n_queries);
+
+    std::cout << "[+] starting `" << dir_name << "` dataset generation" << std::endl;
+    auto [keys, queries_list] = generate_real_queries(all_data, n_queries, ranges);
+    std::cout << std::endl << "[+] full dataset generated" << std::endl;
+    std::cout << "[+] nkeys=" << keys.size() << ", nqueries=" << queries_list[0].size() << std::endl;
+
+    for (auto i = 0; i < ranges.size(); i++) {
+        auto range_size = ranges[i];
+
+        std::string queries_path = root_path + std::to_string(range_size_list[i]) + "/";
+        if (!create_dir_recursive(queries_path))
+            throw std::runtime_error("error, impossible to create dir");
+        if (range_size == 1)
+            save_queries(queries_list[i], queries_path + "point");
+        else
+            save_queries(queries_list[i], queries_path + "left", queries_path + "right");
+        std::cout << "[+] queries wrote at " << queries_path << std::endl;
+    }
+
+    if (mixed_queries)
+    {
+        std::string queries_path = root_path + std::to_string(range_size_list.back()) + "M/";
+        if (!create_dir_recursive(queries_path))
+            throw std::runtime_error("error, impossible to create dir");
+
+        save_queries(queries_list.back(), queries_path + "left", queries_path + "right");
+        std::cout << "[+] queries wrote at " << queries_path << std::endl;
+    }
+
+    save_keys(keys, root_path + "keys", false);
+    std::cout << "[+] keys wrote at " << root_path << std::endl;
+
+}
+
 int main(int argc, char const *argv[]) {
     argparse::ArgumentParser parser("workload_gen");
 
@@ -625,6 +930,14 @@ int main(int argc, char const *argv[]) {
             .scan<'u', uint64_t>()
             .nargs(1);
 
+    parser.add_argument("--expansion-count")
+        .help("Number of expansions in the workload")
+        .nargs(1)
+        .required()
+        .default_value(static_cast<uint32_t>(default_expansion_count))
+        .scan<'u', uint64_t>();
+
+
     try {
         parser.parse_args(argc, argv);
     }
@@ -653,6 +966,7 @@ int main(int argc, char const *argv[]) {
     auto corr_degree = parser.get<double>("--corr-degree");
     auto zipf_batch_size = parser.get<uint64_t>("--zipf-batch-size");
     auto zipf_universe_size = parser.get<uint64_t>("--zipf-universe-size");
+    auto expansion_count = parser.get<uint32_t>("--expansion-count");
     auto n_query_sets = parser.get<uint64_t>("--n-query-sets");
 
     allow_true_queries = parser.get<bool>("--allow-true");
@@ -668,11 +982,15 @@ int main(int argc, char const *argv[]) {
         {
             if (file.find("uint32") != std::string::npos)
                 generate_real_dataset<uint32_t>(file, n_queries, ranges_int);
-            else
+            else if (expansion_count == 0)
                 generate_real_dataset(file, n_queries, ranges_int);
+            else 
+                throw std::runtime_error("real dataset generation with expansions not implemented yet");
         }
 
     }
+    else if (expansion_count == 0)
+        generate_synth_datasets(kdist, qdist, n_keys, n_queries, n_query_sets, ranges_int, zipf_universe_size, corr_degree, zipf_batch_size);
     else
         generate_synth_datasets(kdist, qdist, n_keys, n_queries, n_query_sets, ranges_int, zipf_universe_size, corr_degree, zipf_batch_size);
 
