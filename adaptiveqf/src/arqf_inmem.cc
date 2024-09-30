@@ -273,6 +273,12 @@ int InMemArqf_adapt(InMemArqf* arqf, uint64_t fp_key, int flags) {
   uint64_t fp_hash = fp_key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
     fp_hash = arqf_hash(arqf->qf, fp_key);
+  } else {
+    fp_hash = fp_hash >> (arqf->qf->metadata->value_bits);
   }
-  return maybe_adapt_keepsake(arqf, fp_key, fp_hash, POINT_QUERY);
+  int ret = maybe_adapt_keepsake(arqf, fp_key, fp_hash, POINT_QUERY);
+  if (ret == 0) {
+    arqf->qf->metadata->n_successful_adapts++;
+  }
+  return ret;
 }
