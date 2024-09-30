@@ -29,7 +29,7 @@ target_include_directories(arqflib PUBLIC . ./include ./external/splinterdb/incl
 # The order seems to matter here, aio and xxhash need to compe after SplinterDB.
 target_link_libraries(arqflib PUBLIC pthread ssl crypto m ${SPLINTERDB_FULL_PATH}/libsplinterdb.a aio xxhash)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" )
-  target_compile_options(arqflib PUBLIC -Og -m64 -DDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+  target_compile_options(arqflib PUBLIC -O0 -g -m64 -DDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 else()
   target_compile_options(arqflib PUBLIC -Ofast -m64 -march=native -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 endif()
