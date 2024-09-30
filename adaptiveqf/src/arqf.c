@@ -52,19 +52,24 @@ int arqf_insert(ARQF* arqf, uint64_t fp_key, int flags) {
   db_insert(arqf->rhm, &fingerprint, sizeof(fingerprint), &fp_key, sizeof(fp_key), 1, 0);
   return 0;
 }
-// x, y must be fingerprints (no mementos)
+
 inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_size, int remainder_size, int memento_size) {
   if (x == y) {
     return 255;
   }
+  uint8_t mask_size = quotient_size + remainder_size;
   uint8_t fingerprint_size = quotient_size + remainder_size;
-  while ((x & BITMASK(fingerprint_size)) == (y & BITMASK(fingerprint_size))) {
+  while ((x & BITMASK(mask_size)) == (y & BITMASK(mask_size))) {
       if (fingerprint_size == quotient_size + remainder_size) {
         fingerprint_size += memento_size; // First extension is memento size.
+        mask_size += memento_size;
       }
-      else  fingerprint_size += (remainder_size + memento_size);
+      else  {
+        fingerprint_size += (remainder_size + memento_size);
+        mask_size += (remainder_size + memento_size);
+      }
       if (fingerprint_size > 64) {
-        return 255;
+        mask_size = 64;
       }
   };
   return fingerprint_size;
@@ -162,6 +167,9 @@ inline int adapt_keepsake(
       new_fingerprint_size = min_required_fingerprint_size;
     }
     uint64_t new_fingerprint_bits = collision_hash & BITMASK(new_fingerprint_size);
+    if (new_fingerprint_size > 64) {
+      new_fingerprint_bits = collision_hash; 
+    }
     _overwrite_keepsake(
         arqf->qf, 
         new_fingerprint_bits, 
@@ -171,7 +179,6 @@ inline int adapt_keepsake(
         &last_overwritten_index, 
         &current_keepsake_end
       );
-    // TODO(chesetti): Insert new fingerprint
     db_insert(arqf->rhm, &new_fingerprint_bits, sizeof(new_fingerprint_bits), &key_in_keepsake, sizeof(key_in_keepsake), 1, 0);
   }
 
@@ -180,7 +187,7 @@ inline int adapt_keepsake(
     uint64_t key_in_keepsake = colliding_keys[i];
     assert(qf_point_query(arqf->qf, key_in_keepsake, 0) == 1);
   }
-  assert(qf_point_query(arqf->qf, fp_key, QF_KEY_IS_HASH) == 0);
+  assert(qf_point_query(arqf->qf, fp_key, 0) == 0);
 #endif
   return 0;
 }

@@ -256,7 +256,8 @@ inline QF* init_qf(const t_itr begin, const t_itr end, bool load_keys, const dou
 template <typename value_type>
 inline bool insert_qf(QF* qf, const value_type value)
 {
-  return qf_insert_memento(qf, value, 0);
+  uint64_t fingerprint;
+  return qf_insert_memento(qf, value, 0, &fingerprint);
 }
 
 template <typename value_type>
