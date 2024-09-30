@@ -53,15 +53,8 @@ int InMemArqf_insert(InMemArqf* arqf, uint64_t value, int flags) {
   const uint64_t seed = arqf->qf->metadata->seed;
   uint64_t last_fingerprint = -1;
 
-  qf_insert_memento(arqf->qf, value, flags);
-
-  uint64_t hash = value;
-  if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    hash = arqf_hash(arqf->qf, value);
-  } else {
-    hash = value >> memento_bits;
-  }
-  uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
+  uint64_t fingerprint;
+  qf_insert_memento(arqf->qf, value, flags, &fingerprint);
   arqf->rhm.insert({ fingerprint, value });
   return 0;
   
@@ -217,6 +210,9 @@ inline int  maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_h
   }
 
   uint64_t num_colliding_keys = arqf->rhm.count(colliding_fingerprint);
+  if (num_colliding_keys == 0) {
+    abort(); // Improperly maintained RHM.
+  }
   uint64_t* colliding_keys = (uint64_t*)malloc(num_colliding_keys * sizeof(uint64_t));
 
   int i = 0;

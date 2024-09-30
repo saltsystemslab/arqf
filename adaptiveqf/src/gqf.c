@@ -3804,7 +3804,7 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   return 0;
 }
 
-int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
+int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags, uint64_t *fingerprint) {
   // TODO(chesetti): Handle case of extensions.
   uint64_t hash = key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
@@ -3812,6 +3812,9 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   } else {
     hash = key >> qf->metadata->value_bits;
   }
+  const uint64_t quotient_bits = qf->metadata->quotient_bits;
+  const uint64_t remainder_bits = qf->metadata->key_remainder_bits;
+  const uint64_t memento_bits = qf->metadata->value_bits;
   uint64_t hash_memento = key & BITMASK(qf->metadata->value_bits);
   const uint64_t hash_remainder = hash & BITMASK(qf->metadata->key_remainder_bits);
   const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits)) & BITMASK(qf->metadata->quotient_bits);
@@ -3826,6 +3829,7 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     METADATA_WORD(qf, runends, hash_quotient) |= (1ULL << (hash_quotient % QF_SLOTS_PER_BLOCK));
     set_slot(qf, hash_quotient, slot_value);
     assert(run_end(qf, hash_quotient) == runend_index);
+    *fingerprint = (hash & BITMASK(quotient_bits + remainder_bits));
     return 0;
   }
 
@@ -3840,6 +3844,7 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     METADATA_WORD(qf, occupieds, hash_quotient) |= (1ULL << (hash_quotient % 64));
     METADATA_WORD(qf, runends, runend_index+1) |= (1ULL << ((runend_index + 1) % 64));
     assert(run_end(qf, hash_quotient) == runend_index+1);
+    *fingerprint = (hash & BITMASK(quotient_bits + remainder_bits));
     return 0;
   }
 
@@ -3863,12 +3868,14 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
       uint64_t old_remainder = (get_slot(qf, target_index) & BITMASK(qf->metadata->key_remainder_bits));
     uint64_t num_fingerprint_bits = qf->metadata->quotient_bits + qf->metadata->key_remainder_bits + num_ext_bits;
     _overwrite_keepsake(qf, fingerprint_bits, num_fingerprint_bits, hash_memento, target_index, &limit_index, &keepsake_runend_index);
+    *fingerprint = colliding_fingerprint;
 
   } else if (num_ext_bits != -1) {
     // The exact keepsake does not exist, but the remainder exists.
     // So add the new keepsake.
     uint64_t num_fingerprint_bits = qf->metadata->quotient_bits + qf->metadata->key_remainder_bits + num_ext_bits;
     _overwrite_keepsake(qf, fingerprint_bits, num_fingerprint_bits, hash_memento, target_index, &limit_index, &keepsake_runend_index);
+    *fingerprint = (hash & BITMASK(num_fingerprint_bits));
   } else if (colliding_fingerprint > hash_remainder) {
       // printf("Remainder does not exist middle %016llx\n", key);
     // if remainder does not exist, will be either set to first remainder greater than hash_remainder
@@ -3877,7 +3884,8 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     insert_one_slot(qf, hash_quotient, target_index, slot_value);
     METADATA_WORD(qf, runends, target_index) |= (1ULL << (target_index % 64));
     METADATA_WORD(qf, extensions, target_index) |= (1ULL << (target_index % 64));
-      assert(run_end(qf, hash_quotient) == runend_index+1);
+    assert(run_end(qf, hash_quotient) == runend_index+1);
+    *fingerprint = (hash & BITMASK(quotient_bits + remainder_bits));
   } else {
       // printf("Remainder does not exist end %016llx\n", key);
     // if no remainder is greater, then target_index will be set to end of current_runend + 1.
@@ -3890,9 +3898,9 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     METADATA_WORD(qf, runends, target_index) |= (1ULL << (target_index % 64));
     METADATA_WORD(qf, extensions, current_runend) |= (1ULL << (current_runend % 64));
     assert(run_end(qf, hash_quotient) == runend_index+1);
+    *fingerprint = (hash & BITMASK(quotient_bits + remainder_bits));
   } 
   return 0;
-
 }
 
 // use the bulk_insert_sort function to ensure sorted order (to be implemented)

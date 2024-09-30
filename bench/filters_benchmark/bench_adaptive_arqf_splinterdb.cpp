@@ -31,6 +31,10 @@
 #include "arqf_wt.h"
 #include "gqf_int.h"
 
+#define MAX_VALUE(nbits) ((1ULL << (nbits)) - 1)
+#define BITMASK(nbits) \
+  ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
+
 /**
  * This file contains the benchmark for Memento filter.
  */
@@ -241,12 +245,27 @@ inline void add_metadata(ARQF *qf) {
   test_out.add_measure("n_successful_adapts", qf->qf->metadata->n_successful_adapts);
   test_out.add_measure("n_failed_adapt_no_space", qf->qf->metadata->n_failed_adapt_no_space);
   test_out.add_measure("n_failed_adapt_no_bits", qf->qf->metadata->n_failed_adapt_no_bits);
+
+  test_out.add_measure("qf_insert_duration", qf->qf->metadata->qf_insert_duration);
+  test_out.add_measure("db_insert_duration", qf->qf->metadata->db_insert_duration);
 }
 
 template <typename value_type>
 inline bool insert_arqf(ARQF* arqf, const value_type value) 
 {
-  return arqf_insert(arqf, value, 0);
+  uint64_t fingerprint, key=value;
+  start_timer(qf_insert);
+  qf_insert_memento(arqf->qf, value, 0, &fingerprint);
+  measure_timer(qf_insert);
+
+  start_timer(db_insert);
+  db_insert(arqf->rhm, &fingerprint, sizeof(fingerprint), &key, sizeof(key), 1, 0);
+  measure_timer(db_insert);
+
+  arqf->qf->metadata->qf_insert_duration += t_duration_qf_insert;
+  arqf->qf->metadata->db_insert_duration += t_duration_db_insert;
+
+  return 0;
 }
 
 template <typename value_type>
