@@ -935,7 +935,7 @@ int main(int argc, char const *argv[]) {
         .nargs(1)
         .required()
         .default_value(static_cast<uint32_t>(default_expansion_count))
-        .scan<'u', uint64_t>();
+        .scan<'u', uint32_t>();
 
 
     try {
@@ -992,7 +992,7 @@ int main(int argc, char const *argv[]) {
     else if (expansion_count == 0)
         generate_synth_datasets(kdist, qdist, n_keys, n_queries, n_query_sets, ranges_int, zipf_universe_size, corr_degree, zipf_batch_size);
     else
-        generate_synth_datasets(kdist, qdist, n_keys, n_queries, n_query_sets, ranges_int, zipf_universe_size, corr_degree, zipf_batch_size);
+        generate_synth_datasets_exp(kdist, qdist, n_keys, n_queries, n_query_sets, ranges_int, expansion_count, zipf_universe_size, corr_degree, zipf_batch_size);
 
     return 0;
 }

@@ -2,6 +2,9 @@
 #include "gqf.h"
 #include "gqf_int.h"
 #include "assert.h"
+#include "splinterdb/platform_linux/public_platform.h"
+#include <algorithm>
+#include <cstdint>
 #include <vector>
 #include <iostream>
 
@@ -36,7 +39,8 @@ int InMemArqf_bulk_load(InMemArqf* arqf, uint64_t *sorted_hashes, uint64_t *keys
     if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
       hash = arqf_hash(arqf->qf, key);
     }
-    uint64_t fingerprint = (hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits);
+    uint64_t fingerprint = ((hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits))
+                    | (arqf->qf->metadata->is_expandable ? 1ULL << (quotient_bits + remainder_bits) : 0);
     arqf->rhm.insert({fingerprint, key});
   }
   return 0;
@@ -178,7 +182,117 @@ inline int adapt_keepsake(
   return 0;
 }
 
+inline int maybe_adapt_keepsake_expandable(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_hash, int query_type) {
+    const uint64_t quotient_size = arqf->qf->metadata->quotient_bits;
+    const uint64_t remainder_size = arqf->qf->metadata->key_remainder_bits;
+    const uint64_t memento_size = arqf->qf->metadata->value_bits;
+
+    int64_t matching_fp_pos[64], matching_fp_ind = 0;
+    matching_fp_pos[0] = -1;
+    while (next_matching_fingerprint(arqf->qf, fp_hash, matching_fp_pos + matching_fp_ind) != -1) {
+        matching_fp_ind++;
+        matching_fp_pos[matching_fp_ind] = matching_fp_pos[matching_fp_ind - 1];
+    }
+    if (matching_fp_ind == 0)
+        return 0; // There was no need to adapt this keepsake, so consider as adapted.
+
+    fp_hash >>= memento_size;
+
+    if (arqf->qf->metadata->noccupied_slots > 0.95 * arqf->qf->metadata->xnslots) {
+        if (qf_is_auto_resize_enabled(arqf->qf)) {
+            // Expand
+            qf_resize_malloc(arqf->qf, arqf->qf->metadata->nslots * 2);
+        }
+        // printf("Hit space limit %llu %llu\n", arqf->qf->metadata->noccupied_slots, arqf->qf->metadata->xnslots);
+        return -1; // not enough space;
+    }
+
+    const uint64_t bucket_index = fp_hash & BITMASK(quotient_size);
+    const uint64_t runstart_pos = bucket_index == 0 ? 0 : run_end(arqf->qf, bucket_index-1) + 1;
+    const uint64_t runend_pos = run_end(arqf->qf, bucket_index);
+
+    uint64_t num_colliding_keys = 0;
+    for (int32_t i = 0; i < matching_fp_ind; i++) {
+        uint64_t matching_fp_size;
+        uint64_t colliding_fingerprint = read_fingerprint_bits(arqf->qf, matching_fp_pos[i], &matching_fp_size);
+        colliding_fingerprint |= 1ULL << matching_fp_size;
+        colliding_fingerprint = (colliding_fingerprint << quotient_size) | bucket_index;
+        num_colliding_keys += arqf->rhm.count(colliding_fingerprint);
+    }
+    uint64_t colliding_keys[num_colliding_keys];
+
+    int colliding_keys_ind = 0;
+    for (int32_t i = 0; i < matching_fp_ind; i++) {
+        uint64_t matching_fp_size;
+        uint64_t colliding_fingerprint = read_fingerprint_bits(arqf->qf, matching_fp_pos[i], &matching_fp_size);
+        colliding_fingerprint |= 1ULL << matching_fp_size;
+        colliding_fingerprint = (colliding_fingerprint << quotient_size) | bucket_index;
+        auto range = arqf->rhm.equal_range(colliding_fingerprint);
+        for (auto it = range.first; it != range.second; it++)
+            colliding_keys[colliding_keys_ind++] = it->second;
+    }
+
+    if (query_type != POINT_QUERY && 
+            !should_adapt_keepsake(colliding_keys, num_colliding_keys, fp_hash, query_type, memento_size)) 
+        return -1;
+
+    uint64_t run_size = runend_pos - runstart_pos + 1;
+    for (int32_t i = matching_fp_ind - 1; i >= 0; i--) {
+        uint64_t matching_fp_size;
+        uint64_t keepsake_fingerprint = read_fingerprint_bits(arqf->qf, matching_fp_pos[i], &matching_fp_size);
+        keepsake_fingerprint |= 1ULL << matching_fp_size;
+        arqf->rhm.erase(keepsake_fingerprint);
+
+        const uint32_t keepsake_size = get_keepsake_len(arqf->qf, matching_fp_pos[i]);
+        remove_keepsake_and_shift_remainders_and_runends_and_offsets(arqf->qf,
+                                                                     run_size == keepsake_size,
+                                                                     bucket_index,
+                                                                     matching_fp_pos[i],
+                                                                     keepsake_size);
+        run_size -= keepsake_size;
+    }
+
+    std::pair<uint64_t, uint64_t> hash_key_pairs[num_colliding_keys];
+    std::transform(colliding_keys, colliding_keys + num_colliding_keys, hash_key_pairs,
+                   [=](uint64_t key) { return std::make_pair(arqf_hash(arqf->qf, key), key); });
+    std::sort(hash_key_pairs, hash_key_pairs + num_colliding_keys);
+    uint8_t min_new_fp_size = 0;
+    for (int32_t i = 0; i < num_colliding_keys; i++)
+        min_new_fp_size = std::max(min_new_fp_size, min_diff_fingerprint_size(fp_hash, 
+                                                                              hash_key_pairs[i].first >> memento_size,
+                                                                              quotient_size,
+                                                                              remainder_size,
+                                                                              memento_size));
+    uint64_t mementos[num_colliding_keys];
+    uint64_t prev_fp = (hash_key_pairs[0].first >> memento_size) & BITMASK(min_new_fp_size), cur_fp;
+    uint32_t num_mementos = 0;
+    mementos[num_mementos++] = hash_key_pairs[0].first & BITMASK(memento_size);
+    for (int32_t i = 1; i < num_colliding_keys; i++) {
+        cur_fp = (hash_key_pairs[i].first >> memento_size) & BITMASK(min_new_fp_size);
+        if (cur_fp != prev_fp) {
+            qf_insert_keepsake(arqf->qf, prev_fp, min_new_fp_size, mementos, num_mementos, QF_KEY_IS_HASH);
+            num_mementos = 0;
+            prev_fp = cur_fp;
+        }
+        mementos[num_mementos++] = hash_key_pairs[i].first & BITMASK(memento_size);
+    }
+    qf_insert_keepsake(arqf->qf, prev_fp, min_new_fp_size, mementos, num_mementos, QF_KEY_IS_HASH);
+    for (auto [hash, key] : hash_key_pairs)
+        arqf->rhm.insert({(hash >> memento_size) | (1ULL << min_new_fp_size), key});
+#if DEBUG
+  for (uint64_t i=0; i < num_colliding_keys; i++) {
+    uint64_t key_in_keepsake = colliding_keys[i];
+    assert(qf_point_query(arqf->qf, key_in_keepsake, 0) == 1);
+  }
+  assert(qf_point_query(arqf->qf, (fp_hash << memento_size) | fp_key & BITMASK(memento_size), QF_KEY_IS_HASH) == 0);
+#endif
+    return 0;
+}
+
 inline int maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_hash, int query_type) {
+  if (arqf->qf->metadata->is_expandable)
+      return maybe_adapt_keepsake_expandable(arqf, fp_key, fp_hash, query_type);
+
   const uint64_t quotient_size = arqf->qf->metadata->quotient_bits;
   const uint64_t remainder_size = arqf->qf->metadata->key_remainder_bits;
   const uint64_t memento_size = arqf->qf->metadata->value_bits;
@@ -193,7 +307,7 @@ inline int maybe_adapt_keepsake(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_ha
   if (ret != 0)
       return 0; // There was no need to adapt this keepsake, so consider as adapted.
 
-  if (arqf->qf->metadata->noccupied_slots > 0.999 * arqf->qf->metadata->xnslots) {
+  if (arqf->qf->metadata->noccupied_slots > 0.99 * arqf->qf->metadata->xnslots) {
     if (qf_is_auto_resize_enabled(arqf->qf)) {
         // Expand
         qf_resize_malloc(arqf->qf, arqf->qf->metadata->nslots * 2);

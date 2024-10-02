@@ -236,6 +236,7 @@ void experiment_expandability(
     const uint64_t N = keys.size();
     const uint64_t n_queries = queries.size() / (expansion_count + 1);
     uint64_t current_dataset_size = N >> expansion_count;
+    std::cerr << "WEEEEEEEEEEELP current_dataset_size=" << current_dataset_size << std::endl;
     auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;

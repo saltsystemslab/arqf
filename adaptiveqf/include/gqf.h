@@ -423,6 +423,20 @@ extern "C" {
   // Makes sure that offsets and quotient runends are valid before and after calling this function.
   int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_extension_bits, uint64_t memento, uint64_t start_index, uint64_t *last_overwritten_index, uint64_t *keepsake_runend);
 
+  uint64_t read_fingerprint_bits(const QF* qf, uint64_t target_index, uint64_t *num_fingerprint_bits);
+  int remove_keepsake_and_shift_remainders_and_runends_and_offsets(QF *qf,
+                                                                   int only_item_in_run,
+                                                                   uint64_t bucket_index,
+                                                                   uint64_t keepsake_index,
+                                                                   uint64_t keepsake_length);
+  uint32_t get_keepsake_len(QF *qf, uint64_t pos);
+  uint64_t run_end(const QF *qf, uint64_t hash_bucket_index);
+
+  int next_matching_fingerprint(const QF* qf, uint64_t fp_hash, int64_t* start_index);
+
+  int qf_insert_keepsake(QF *qf, uint64_t hash, uint32_t num_hash_bits, 
+                         uint64_t *mementos, uint32_t num_mementos,
+                         uint8_t flags);
 
 #ifdef __cplusplus
 }
