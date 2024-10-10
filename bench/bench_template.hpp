@@ -147,7 +147,7 @@ void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double p
 }
 
 template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
-void experiment_adaptivity(
+void experiment_fpr(
     InitFun init_f, 
     RangeFun range_f, 
     AdaptFun adapt_f, 
@@ -275,8 +275,9 @@ get_database_stat(WT_SESSION *session, int stat_id)
 }
 
 
+// Adversarial Test.
 template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
-void experiment_adaptivity_disk(
+void experiment_adversarial_workload(
     InitFun init_f, 
     RangeFun range_f, 
     AdaptFun adapt_f, 
@@ -329,6 +330,7 @@ void experiment_adaptivity_disk(
     uint64_t adapt_duration_ns = 0;
     uint64_t query_index = 0;
     uint64_t overall_query_duration = 0;
+    uint64_t true_queries = 0;
 
     start_timer(warmup_time);
     std::vector<std::pair<uint64_t, uint64_t> > adversaries;
@@ -349,6 +351,9 @@ void experiment_adaptivity_disk(
         fetch_from_db_duration_ns += t_duration_db_fetch;
 
         fp += (num_items == 0);
+        if (num_items != 0) {
+          true_queries++;
+        }
         if (num_items == 0) {
           start_timer(adapt_qf);
           if (!adapt_f(f, left, right)) {
@@ -428,7 +433,6 @@ void experiment_adaptivity_disk(
     }
     stop_timer(query_time);
 
-
     auto size = size_f(f);
     test_out.add_measure("size", size);
     test_out.add_measure("bpk", TO_BPK(size, keys.size()));
@@ -446,6 +450,7 @@ void experiment_adaptivity_disk(
     test_out.add_measure("num_adversarial_queries", num_adversarial_queries);
     test_out.add_measure("bytes_read", get_database_stat(session, WT_STAT_CONN_CACHE_BYTES_READ));
     test_out.add_measure("num_read_disk_ios", get_database_stat(session, WT_STAT_CONN_READ_IO));
+    test_out.add_measure("true_queries", true_queries);
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
@@ -454,7 +459,7 @@ void experiment_adaptivity_disk(
 template <
   typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, 
   typename MetadataFun, typename key_type, typename... Args>
-void experiment_adaptivity_mixed(
+void experiment_mixed_workload(
     InitFun init_f, 
     InsertFun insert_f,
     RangeFun range_f, 
@@ -476,6 +481,7 @@ void experiment_adaptivity_mixed(
 
     uint64_t num_db_fetches = 0;
     uint64_t num_adapts = 0;
+    uint64_t true_queries = 0;
     uint64_t fetch_from_db_duration_ns = 0;
     uint64_t adapt_duration_ns = 0;
   // Begin loading DB.
@@ -549,6 +555,7 @@ void experiment_adaptivity_mixed(
           fetch_from_db_duration_ns += t_duration_db_fetch;
 
           fp += (num_items == 0);
+          if (num_items != 0) true_queries++;
           if (num_items == 0) {
             start_timer(adapt_qf);
             if (!adapt_f(f, left, right)) {
@@ -578,6 +585,7 @@ void experiment_adaptivity_mixed(
     test_out.add_measure("num_read_disk_ios", get_database_stat(session, WT_STAT_CONN_READ_IO));
     test_out.add_measure("num_read_queries", read_op_idx);
     test_out.add_measure("num_write_queries", write_op_idx - mixed_num_warmup_keys);
+    test_out.add_measure("true_queries", true_queries);
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
@@ -693,14 +701,14 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     auto files = parser.get<std::vector<std::string>>("workload");
 
     auto test_type = parser.get<std::string>("--test-type");
-    if (test_type == "adaptivity_disk") {
+    if (test_type == "adversarial") {
       key_len = parser.get<uint64_t>("--key_len");
       val_len = parser.get<uint64_t>("--val_len");
       uint64_t adversarial_percent = parser.get<uint64_t>("--adversarial_rate");
       adversarial_rate = adversarial_percent / 100.0;
       buffer_pool_size_mb = parser.get<uint64_t>("--buffer_pool_size");
     }
-    if (test_type == "adaptivity_mixed") {
+    if (test_type == "mixed") {
       key_len = parser.get<uint64_t>("--key_len");
       val_len = parser.get<uint64_t>("--val_len");
       mixed_num_warmup_keys = parser.get<uint64_t>("--mixed_num_warmup_keys");

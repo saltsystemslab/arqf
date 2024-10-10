@@ -302,30 +302,30 @@ int main(int argc, char const *argv[])
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
     auto test_type = parser.get<std::string>("--test-type");
 
-    if (test_type == "adaptivity_inmem") {
-      experiment_adaptivity(
+    if (test_type == "fpr") {
+      experiment_fpr(
           pass_fun(init_qf), 
           pass_ref(query_qf), 
           pass_ref(adapt_qf),
           pass_ref(size_qf), 
           pass_ref(add_metadata), 
           arg, keys, queries, queries);
-    } else if (test_type == "adaptivity_disk") {
+    } else if (test_type == "adversarial") {
       std::string db_home = parser.get<std::string>("keys");
       db_home += "_wtdb";
-      experiment_adaptivity_disk(
+      experiment_adversarial_workload(
           pass_fun(init_qf), 
           pass_ref(query_qf), 
           pass_ref(adapt_qf),
           pass_ref(size_qf), 
           pass_ref(add_metadata), 
           arg, db_home, keys, queries, queries);
-    } else if (test_type == "adaptivity_mixed") {
+    } else if (test_type == "mixed") {
       std::string wt_home = "mixed_workload_wt";
       if (std::filesystem::exists(wt_home))
         std::filesystem::remove_all(wt_home);
       std::filesystem::create_directory(wt_home);
-      experiment_adaptivity_mixed(
+      experiment_mixed_workload(
           pass_fun(init_qf), 
           pass_ref(insert_arqf), 
           pass_ref(query_qf), 
