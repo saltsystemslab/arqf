@@ -190,6 +190,7 @@ inline QF* init_memento(const t_itr begin, const t_itr end, bool load_keys, cons
   boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
 
   qf_bulk_load(qf, &key_hashes[0], key_hashes.size(), QF_NO_LOCK | QF_KEY_IS_HASH);
+  qf->metadata->n_filter_queries = 0;
 
   stop_timer(build_time);
 
@@ -237,6 +238,7 @@ inline void add_metadata(QF* f)
   test_out.add_measure("m_bits", f->metadata->memento_bits);
   test_out.add_measure("n_slots", f->metadata->xnslots);
   test_out.add_measure("noccupied_slots", f->metadata->noccupied_slots);
+  test_out.add_measure("n_filter_queries", f->metadata->n_filter_queries);
   test_out.add_measure("n_successful_adapts", 0);
   test_out.add_measure("n_failed_adapt_no_space", 0);
   test_out.add_measure("n_failed_adapt_no_bits", 0);

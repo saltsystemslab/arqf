@@ -3700,6 +3700,7 @@ int _overwrite_keepsake(QF* qf,
 }
 
 int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
+  qf->metadata->n_filter_queries++;
   uint64_t hash = key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
     hash = arqf_hash(qf, key);
@@ -3728,9 +3729,9 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
   }
 
   uint64_t nearest_memento = lower_bound_memento(qf, hash_memento, current_index, memento_offset); 
-  if (nearest_memento == hash_memento) 
+  if (nearest_memento == hash_memento)  
     return 1;
-  else 
+  else  
     return 0;
 }
 
@@ -3751,6 +3752,7 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
   const uint64_t r_quotient = (r_hash >> (qf->metadata->key_remainder_bits)) & BITMASK(qf->metadata->quotient_bits);
   const uint64_t r_memento = r_key & BITMASK(qf->metadata->value_bits);
 
+  qf->metadata->n_filter_queries++;
   if (is_occupied(qf, l_quotient)) {
     uint64_t current_index; 
     int ret = query_colliding_fingerprint(qf, l_hash, &current_index);
@@ -3782,6 +3784,7 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
     }
   }
 
+  qf->metadata->n_filter_queries++;
   if (is_occupied(qf, r_quotient)) {
     uint64_t current_index; 
     int ret = query_colliding_fingerprint(qf, r_hash, &current_index);

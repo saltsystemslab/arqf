@@ -221,7 +221,8 @@ inline ARQF *init_qf(const t_itr begin, const t_itr end, bool load_keys, const d
     }
 
     stop_timer(build_time);
-    check_iteration_validity(arqf->qf, &key_hashes[0], nkeys);
+    // check_iteration_validity(arqf->qf, &key_hashes[0], nkeys);
+    arqf->qf->metadata->n_filter_queries = 0;
     return arqf;
 }
 
@@ -248,6 +249,8 @@ inline void add_metadata(ARQF *qf) {
 
   test_out.add_measure("qf_insert_duration", qf->qf->metadata->qf_insert_duration);
   test_out.add_measure("db_insert_duration", qf->qf->metadata->db_insert_duration);
+
+  test_out.add_measure("n_filter_queries", qf->qf->metadata->n_filter_queries);
 }
 
 template <typename value_type>

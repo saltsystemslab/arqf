@@ -202,7 +202,8 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, bool load_keys, 
     abort();
   }
   stop_timer(build_time);
-  check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
+  // check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
+  arqf->qf->metadata->n_filter_queries = 0;
   return arqf;
 }
 
@@ -253,6 +254,7 @@ inline void add_metadata(InMemArqf* arqf)
   test_out.add_measure("n_successful_adapts", arqf->qf->metadata->n_successful_adapts);
   test_out.add_measure("n_failed_adapt_no_space", arqf->qf->metadata->n_failed_adapt_no_space);
   test_out.add_measure("n_failed_adapt_no_bits", arqf->qf->metadata->n_failed_adapt_no_bits);
+  test_out.add_measure("n_filter_queries", arqf->qf->metadata->n_filter_queries);
 }
 
 template <

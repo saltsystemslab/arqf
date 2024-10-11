@@ -102,6 +102,7 @@ extern "C" {
         uint64_t nelts;
         uint64_t ndistinct_elts;
         uint64_t noccupied_slots;
+        uint64_t n_filter_queries;
     } quotient_filter_metadata;
 
     typedef quotient_filter_metadata qfmetadata;

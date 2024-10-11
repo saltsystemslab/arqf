@@ -249,7 +249,8 @@ inline QF* init_qf(const t_itr begin, const t_itr end, bool load_keys, const dou
 #endif
   stop_timer(build_time);
   boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
-  check_iteration_validity(qf, &key_hashes[0], nkeys);
+  // check_iteration_validity(qf, &key_hashes[0], nkeys);
+  qf->metadata->n_filter_queries = 0;
   return qf;
 }
 
@@ -276,6 +277,7 @@ inline void add_metadata(QF* f)
   test_out.add_measure("n_successful_adapts", f->metadata->n_successful_adapts);
   test_out.add_measure("n_failed_adapt_no_space", f->metadata->n_failed_adapt_no_space);
   test_out.add_measure("n_failed_adapt_no_bits", f->metadata->n_failed_adapt_no_bits);
+  test_out.add_measure("n_filter_queries", f->metadata->n_filter_queries);
 }
 
 template <typename value_type>

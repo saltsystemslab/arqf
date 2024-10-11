@@ -3115,6 +3115,7 @@ static inline uint64_t lower_bound_mementos_for_fingerprint(const QF *qf, uint64
 
 int qf_point_query(const QF *qf, uint64_t key, uint64_t memento, uint8_t flags)
 {
+  qf->metadata->n_filter_queries += 1;
 	if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
 		if (qf->metadata->hash_mode == QF_HASH_DEFAULT)
 			key = MurmurHash64A(((void *)&key), sizeof(key), qf->metadata->seed);
@@ -3235,6 +3236,7 @@ int qf_range_query(const QF *qf, uint64_t l_key, uint64_t l_memento,
 
     uint64_t candidate_memento;
     if (l_hash == r_hash) { // Range contained in a single prefix.
+      qf->metadata->n_filter_queries += 1;
 #ifdef DEBUG
         perror("RANGE QUERY: SINGLE PREFIX");
 #endif /* DEBUG */
@@ -3288,6 +3290,7 @@ int qf_range_query(const QF *qf, uint64_t l_key, uint64_t l_memento,
         return 0;
     }
     else {  // Range intersects two prefixes
+      qf->metadata->n_filter_queries += 2;
 #ifdef DEBUG
         perror("RANGE QUERY: TWO PREFIX");
 #endif /* DEBUG */

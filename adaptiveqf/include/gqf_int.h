@@ -105,6 +105,7 @@ extern "C" {
     uint64_t n_failed_adapt_no_bits;
     uint64_t qf_insert_duration;
     uint64_t db_insert_duration;
+    uint64_t n_filter_queries;
 	} quotient_filter_metadata;
 
 	typedef quotient_filter_metadata qfmetadata;
