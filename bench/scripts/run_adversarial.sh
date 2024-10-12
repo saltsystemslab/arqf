@@ -33,20 +33,20 @@ for filter in memento arqf adaptive_arqf_inmem adaptive_arqf_splinterdb
 do
   ${BIN_DIR}/bench/bench_${filter} 20 \
     --keys ${WORKLOAD_DIR}/keys \
-    --workload ${WORKLOAD_DIR}/0_quniform_trial_0/left ${WORKLOAD_DIR}/0_quniform_trial_0/right ${WORKLOAD_DIR}/0_quniform_trial_0/result \
-    --csv ${WORKLOAD_DIR}/0_quniform_trial_0/${filter}_${TEST_TYPE}.csv \
+    --workload ${WORKLOAD_DIR}/0_qzipfian_trial_0/left ${WORKLOAD_DIR}/0_qzipfian_trial_0/right ${WORKLOAD_DIR}/0_qzipfian_trial_0/result \
+    --csv ${WORKLOAD_DIR}/0_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate ${adversarial_rate}
 
   ${BIN_DIR}/bench/bench_${filter} 20 \
     --keys ${WORKLOAD_DIR}/keys \
-    --workload ${WORKLOAD_DIR}/5_quniform_trial_0/left ${WORKLOAD_DIR}/5_quniform_trial_0/right ${WORKLOAD_DIR}/5_quniform_trial_0/result \
-    --csv ${WORKLOAD_DIR}/5_quniform_trial_0/${filter}_${TEST_TYPE}.csv \
+    --workload ${WORKLOAD_DIR}/5_qzipfian_trial_0/left ${WORKLOAD_DIR}/5_qzipfian_trial_0/right ${WORKLOAD_DIR}/5_qzipfian_trial_0/result \
+    --csv ${WORKLOAD_DIR}/5_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate ${adversarial_rate}
 
   ${BIN_DIR}/bench/bench_${filter} 20 \
     --keys ${WORKLOAD_DIR}/keys \
-    --workload ${WORKLOAD_DIR}/10_quniform_trial_0/left ${WORKLOAD_DIR}/10_quniform_trial_0/right ${WORKLOAD_DIR}/10_quniform_trial_0/result \
-    --csv ${WORKLOAD_DIR}/10_quniform_trial_0/${filter}_${TEST_TYPE}.csv \
+    --workload ${WORKLOAD_DIR}/10_qzipfian_trial_0/left ${WORKLOAD_DIR}/10_qzipfian_trial_0/right ${WORKLOAD_DIR}/10_qzipfian_trial_0/result \
+    --csv ${WORKLOAD_DIR}/10_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate ${adversarial_rate}
 done
 done
