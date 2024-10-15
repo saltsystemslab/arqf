@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <vector>
 #include <iostream>
 
 #define GET_KEY_HASH(flag) (flag & QF_KEY_IS_HASH)
@@ -133,7 +132,7 @@ inline int adapt_keepsake(
   for (int i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
     uint64_t collision_hash = arqf_hash(arqf->qf, key_in_keepsake);
-    uint64_t collision_prefix = (collision_hash) >> memento_size;
+    uint64_t collision_prefix = collision_hash >> memento_size;
     if (collision_prefix == fp_prefix) {
 #if DEBUG
       if ((fp_key >> memento_size) != key_in_keepsake >> memento_size) {
@@ -142,7 +141,7 @@ inline int adapt_keepsake(
 #endif
       continue;
     }
-    uint64_t collision_memento = (collision_hash) & BITMASK(memento_size);
+    uint64_t collision_memento = collision_hash & BITMASK(memento_size);
     uint8_t new_fingerprint_size = min_diff_fingerprint_size(fp_prefix, collision_prefix, quotient_size, remainder_size, memento_size);
     if (min_required_fingerprint_size < new_fingerprint_size) min_required_fingerprint_size = new_fingerprint_size;
   }
