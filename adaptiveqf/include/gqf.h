@@ -437,6 +437,9 @@ extern "C" {
   int qf_insert_keepsake(QF *qf, uint64_t hash, uint32_t num_hash_bits, 
                          uint64_t *mementos, uint32_t num_mementos,
                          uint8_t flags);
+  int qf_insert_keepsake_merge(QF *qf, const uint64_t hash, const uint32_t num_hash_bits,
+                               uint64_t *mementos, uint32_t num_mementos, uint8_t flags);
+  void validate_filter(QF *qf);
 
 #ifdef __cplusplus
 }

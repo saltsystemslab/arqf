@@ -787,7 +787,7 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     auto files = parser.get<std::vector<std::string>>("workload");
 
     auto test_type = parser.get<std::string>("--test-type");
-    if (test_type == "adaptivity_disk") {
+    if (test_type == "adaptivity_disk" || test_type == "expandability_disk") {
       key_len = parser.get<uint64_t>("--key_len");
       val_len = parser.get<uint64_t>("--val_len");
       uint64_t adversarial_percent = parser.get<uint64_t>("--adversarial_rate");

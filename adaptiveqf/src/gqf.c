@@ -641,7 +641,7 @@ inline uint64_t run_end(const QF *qf, uint64_t hash_bucket_index)
 	uint64_t bucket_intrablock_offset = hash_bucket_index % QF_SLOTS_PER_BLOCK;
 	uint64_t bucket_blocks_offset = block_offset(qf, bucket_block_index);
 
-	uint64_t bucket_intrablock_rank   = bitrank(get_block(qf, bucket_block_index)->occupieds[0], bucket_intrablock_offset);
+	uint64_t bucket_intrablock_rank = bitrank(get_block(qf, bucket_block_index)->occupieds[0], bucket_intrablock_offset);
 
 	if (bucket_intrablock_rank == 0) {
 		if (bucket_blocks_offset <= bucket_intrablock_offset) {
@@ -690,27 +690,25 @@ inline uint64_t run_end(const QF *qf, uint64_t hash_bucket_index)
 
 static inline int offset_lower_bound(const QF *qf, uint64_t slot_index)
 {
-	//printf("%lu\n", slot_index);
-	/*if (slot_index == 613616636) {
-		bp1(qf, 0, 0, 0);
-		return 0;
-	}*/
-	const qfblock * b = get_block(qf, slot_index / QF_SLOTS_PER_BLOCK);
-	const uint64_t slot_offset = slot_index % QF_SLOTS_PER_BLOCK;
-	const uint64_t boffset = b->offset;
-	const uint64_t occupieds = b->occupieds[0] & BITMASK(slot_offset+1);
-	assert(QF_SLOTS_PER_BLOCK == 64);
-	if (boffset <= slot_offset) {
-		const uint64_t runends = (b->runends[0] & ~(b->extensions[0]) & BITMASK(slot_offset)) >> boffset;
-		//const uint64_t runends = (b->runends[0] & BITMASK(slot_offset)) >> boffset;
-		return popcnt(occupieds) - popcnt(runends);
-	}
-	return boffset - slot_offset + popcnt(occupieds);
+    const qfblock * b = get_block(qf, slot_index / QF_SLOTS_PER_BLOCK);
+    const uint64_t slot_offset = slot_index % QF_SLOTS_PER_BLOCK;
+    const uint64_t boffset = b->offset;
+    const uint64_t occupieds = b->occupieds[0] & BITMASK(slot_offset+1);
+    assert(QF_SLOTS_PER_BLOCK == 64);
+    if (boffset <= slot_offset) {
+        const uint64_t runends = ((b->runends[0] & ~(b->extensions[0])) & BITMASK(slot_offset)) >> boffset;
+        const int res = popcnt(occupieds) - popcnt(runends);
+        assert(res >= 0);
+        return res;
+    }
+    const int res = boffset - slot_offset + popcnt(occupieds);
+    assert(res >= 0);
+    return res;
 }
 
 static inline int is_empty(const QF *qf, uint64_t slot_index)
 {
-	return offset_lower_bound(qf, slot_index) == 0;
+    return offset_lower_bound(qf, slot_index) == 0;
 }
 
 static inline int might_be_empty(const QF *qf, uint64_t slot_index)
@@ -730,6 +728,7 @@ static inline int probably_is_empty(const QF *qf, uint64_t slot_index)
 
 static inline uint64_t find_first_empty_slot(QF *qf, uint64_t from)
 {
+    const uint64_t init_from = from;
 	do {
     // Keepsakes cannot end with extension, so should be good to drop this.
     // while (is_extension_or_counter(qf, from)) from++;
@@ -747,7 +746,9 @@ static inline uint64_t find_first_empty_slot(QF *qf, uint64_t from)
 			break;
 		from = from + t;
 	} while(1);
+#ifdef DEBUG
     assert(from < qf->metadata->xnslots);
+#endif /* DEBUG */
 	return from;
 }
 
@@ -791,6 +792,20 @@ static inline uint32_t find_next_empty_slot_runs_of_size_n(QF *qf, uint64_t from
     while (n > 0) {
         indices[ind++] = find_first_empty_slot(qf, from);
         indices[ind] = get_number_of_consecutive_empty_slots(qf, indices[ind - 1], n);
+#ifdef DEBUG
+        {
+            uint64_t occupied_cnt = 0, runend_cnt = 0;
+            for (int64_t i = 0; i < indices[ind - 1]; i++) {
+                occupied_cnt += is_occupied(qf, i);
+                runend_cnt += is_runend(qf, i);
+            }
+            for (int64_t i = indices[ind - 1]; i < indices[ind - 1] + indices[ind]; i++) {
+                occupied_cnt += is_occupied(qf, i);
+                assert(occupied_cnt == runend_cnt);
+                runend_cnt += is_runend(qf, i);
+            }
+        }
+#endif /* DEBUG */
         from = indices[ind - 1] + indices[ind];
         n -= indices[ind];
         ind++;
@@ -959,13 +974,31 @@ static inline void shift_runends(QF *qf, int64_t first, uint64_t last, uint64_t 
 	uint64_t bend = (last + distance + 1) % 64;
 
 	if (last_word != first_word) {
-		METADATA_WORD(qf, runends, 64*last_word) = shift_into_b(METADATA_WORD(qf, runends, 64*(last_word-1)), METADATA_WORD(qf, runends, 64*last_word), 0, bend, distance);
-		METADATA_WORD(qf, extensions, 64*last_word) = shift_into_b(METADATA_WORD(qf, extensions, 64*(last_word-1)), METADATA_WORD(qf, extensions, 64*last_word), 0, bend, distance);
+        // The code in the original RSQF implementation had a weird issue with
+        // overwriting parts of the bitmap that it shouldn't have touched. The
+        // issue came up when `distance > 1`, and is fixed now.
+        const uint64_t first_runends_replacement = METADATA_WORD(qf, runends, first) & (~BITMASK(bstart));
+        const uint64_t first_extensions_replacement = METADATA_WORD(qf, extensions, first) & (~BITMASK(bstart));
+
+        METADATA_WORD(qf, runends, 64*last_word) = shift_into_b((last_word == first_word + 1 ? first_runends_replacement
+                                                                                             : METADATA_WORD(qf, runends, 64*(last_word-1))),
+                                                                METADATA_WORD(qf, runends, 64*last_word),
+                                                                0, bend, distance);
+        METADATA_WORD(qf, extensions, 64*last_word) = shift_into_b((last_word == first_word + 1 ?first_extensions_replacement 
+                                                                                                : METADATA_WORD(qf, extensions, 64*(last_word-1))),
+                                                                    METADATA_WORD(qf, extensions, 64*last_word),
+                                                                    0, bend, distance);
 		bend = 64;
 		last_word--;
 		while (last_word != first_word) {
-			METADATA_WORD(qf, runends, 64*last_word) = shift_into_b(METADATA_WORD(qf, runends, 64*(last_word-1)), METADATA_WORD(qf, runends, 64*last_word), 0, bend, distance);
-			METADATA_WORD(qf, extensions, 64*last_word) = shift_into_b(METADATA_WORD(qf, extensions, 64*(last_word-1)), METADATA_WORD(qf, extensions, 64*last_word), 0, bend, distance);
+            METADATA_WORD(qf, runends, 64*last_word) = shift_into_b((last_word == first_word + 1 ? first_runends_replacement
+                                                                                                 : METADATA_WORD(qf, runends, 64*(last_word-1))),
+                                                                    METADATA_WORD(qf, runends, 64*last_word),
+                                                                    0, bend, distance);
+            METADATA_WORD(qf, extensions, 64*last_word) = shift_into_b((last_word == first_word + 1 ? first_extensions_replacement
+                                                                                                    : METADATA_WORD(qf, extensions, 64*(last_word-1))),
+                                                                        METADATA_WORD(qf, extensions, 64*last_word),
+                                                                        0, bend, distance);
 			last_word--;
 		}
 	}
@@ -1078,24 +1111,39 @@ inline int remove_replace_slots_and_shift_remainders_and_runends_and_offsets(con
 	return ret_current_distance;
 }
 
+void validate_filter(QF *qf) {
+    uint64_t occupied_cnt = 0, runend_cnt = 0, total_cnt = 0;
+    int32_t prev_empty = -1;
+    for (uint32_t i = 0; i < qf->metadata->xnslots; i++) {
+        occupied_cnt += is_occupied(qf, i);
+        total_cnt += occupied_cnt > runend_cnt;
+        if (occupied_cnt == runend_cnt) {
+            assert(is_empty(qf, i));
+            for (int j = prev_empty + 1; j <= i; j++)
+                assert(find_first_empty_slot(qf, j) == i);
+            prev_empty = i;
+        }
+        if (is_empty(qf, i))
+            assert(occupied_cnt == runend_cnt);
+        runend_cnt += is_runend(qf, i);
+        assert(occupied_cnt >= runend_cnt);
+        //if (occupied_cnt > runend_cnt)
+        //    assert(get_slot(qf, i) > 0);
+    }
+    assert(occupied_cnt == runend_cnt);
+    assert(total_cnt == qf->metadata->noccupied_slots);
+    QFi qfi;
+    qf_iterator_from_position(qf, &qfi, 0);
+    for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi))
+        assert(qfi.current > 0);
+}
+
 inline int remove_keepsake_and_shift_remainders_and_runends_and_offsets(QF *qf, int only_item_in_run, uint64_t bucket_index,
         uint64_t keepsake_index, uint64_t keepsake_length)
 {
-    /*
 #ifdef DEBUG
-    {
-        uint64_t occupied_cnt = 0, runend_cnt = 0;
-        for (uint32_t i = 0; i < qf->metadata->xnslots; i++) {
-            occupied_cnt += is_occupied(qf, i);
-            runend_cnt += is_runend(qf, i);
-            assert(occupied_cnt >= runend_cnt);
-            if (occupied_cnt > runend_cnt)
-                assert(get_slot(qf, i) > 0);
-        }
-        assert(occupied_cnt == runend_cnt);
-    }
+    validate_filter(qf);
 #endif /* DEBUG */
-
     // If this is the last thing in its run, then we may need to set a new runend bit
     int was_runend = is_runend(qf, keepsake_index + keepsake_length - 1);
     if (was_runend && !only_item_in_run) {
@@ -1113,7 +1161,7 @@ inline int remove_keepsake_and_shift_remainders_and_runends_and_offsets(QF *qf, 
     while (current_distance > 0) { // every iteration of this loop deletes one slot from the item and shifts the cluster accordingly
                                    // start with an occupied-runend pair
         current_bucket = bucket_index;
-        current_slot = keepsake_index + keepsake_length - 1;
+        current_slot = keepsake_index + current_distance - 1;
 
         if (!was_runend) 
             while (!is_runend(qf, current_slot))
@@ -1147,6 +1195,17 @@ inline int remove_keepsake_and_shift_remainders_and_runends_and_offsets(QF *qf, 
         METADATA_WORD(qf, runends, i) &= ~(1ULL << (i % 64));
         METADATA_WORD(qf, extensions, i) &= ~(1ULL << (i % 64));
 
+        // update the offset bits.
+        for (i = current_slot / QF_SLOTS_PER_BLOCK; i > original_bucket / QF_SLOTS_PER_BLOCK; i--) {
+            const uint32_t max_offset = (uint32_t) BITMASK(8*sizeof(qf->blocks[0].offset));
+            if (get_block(qf, i)->offset < max_offset) 
+                get_block(qf, i)->offset--;
+            else {
+                const uint32_t new_offset = run_end(qf, i * QF_SLOTS_PER_BLOCK - 1) - i * QF_SLOTS_PER_BLOCK + 1;
+                get_block(qf, i)->offset = new_offset < max_offset ? new_offset : max_offset;
+            }
+        }
+
         current_distance--;
     }
 
@@ -1155,46 +1214,10 @@ inline int remove_keepsake_and_shift_remainders_and_runends_and_offsets(QF *qf, 
     if (only_item_in_run)
         METADATA_WORD(qf, occupieds, bucket_index) &= ~(1ULL << (bucket_index % 64));
 
-    // update the offset bits.
-    // find the number of occupied slots in the original_bucket block.
-    // Then find the runend slot corresponding to the last run in the
-    // original_bucket block.
-    // Update the offset of the block to which it belongs.
-    uint64_t original_block = original_bucket / QF_SLOTS_PER_BLOCK;
-    if (keepsake_length > 0) {	// we only update offsets if we shift/delete anything
-        while (1) {
-            uint64_t last_occupieds_hash_index = QF_SLOTS_PER_BLOCK * original_block + (QF_SLOTS_PER_BLOCK - 1);
-            uint64_t runend_index = run_end(qf, last_occupieds_hash_index);
-            // runend spans across the block
-            // update the offset of the next block
-            if (runend_index / QF_SLOTS_PER_BLOCK == original_block) { // if the run ends in the same block
-                if (get_block(qf, original_block + 1)->offset == 0)
-                    break;
-                get_block(qf, original_block + 1)->offset = 0;
-            } else { // if the last run spans across the block
-                if (get_block(qf, original_block + 1)->offset == (runend_index - last_occupieds_hash_index))
-                    break;
-                get_block(qf, original_block + 1)->offset = (runend_index - last_occupieds_hash_index);
-            }
-            original_block++;
-        }
-    }
-
     qf->metadata->noccupied_slots -= keepsake_length;
 
-    /*
 #ifdef DEBUG
-    {
-        uint64_t occupied_cnt = 0, runend_cnt = 0;
-        for (uint32_t i = 0; i < qf->metadata->xnslots; i++) {
-            occupied_cnt += is_occupied(qf, i);
-            runend_cnt += is_runend(qf, i);
-            assert(occupied_cnt >= runend_cnt);
-            if (occupied_cnt > runend_cnt)
-                assert(get_slot(qf, i) > 0);
-        }
-        assert(occupied_cnt == runend_cnt);
-    }
+    validate_filter(qf);
 #endif /* DEBUG */
     return ret_current_distance;
 }
@@ -1922,8 +1945,6 @@ int64_t qf_iterator_from_key_value(const QF *qf, QFi *qfi, uint64_t key, uint64_
 			runstart_index = hash_bucket_index;
 		uint64_t current_remainder, current_count, current_end;
 		do {
-			//printf("2517");
-			//current_end = decode_counter(qf, runstart_index, &current_remainder, &current_count);
 			if (current_remainder >= hash_remainder) {
 				flag = true;
 				break;
@@ -2000,7 +2021,6 @@ int qfi_get_key(const QFi *qfi, uint64_t *key, uint64_t *value, uint64_t
 
 int qfi_get_hash(const QFi *qfi, uint64_t *hash, uint32_t *hash_len, uint64_t *memento)
 {
-   abort(); // DO NOT USE.
 	*hash = *hash_len = *memento = 0;
 	return qfi_get(qfi, hash, hash_len, memento);
 }
@@ -2026,8 +2046,16 @@ static inline int qfi_start_new_keepsake(QFi* qfi)
     return QFI_INVALID;
 
   assert(is_keepsake_or_quotient_runend(qfi->qf, qfi->current - 1));
-  if (!is_runend(qfi->qf, qfi->current - 1))
-      assert(GET_REMAINDER(qfi->qf, qfi->current - 1) != GET_REMAINDER(qfi->qf, qfi->current));
+  if (!is_runend(qfi->qf, qfi->current - 1)) {
+      int32_t keepsake_start = qfi->current - 2;
+      while (keepsake_start >= (int32_t) qfi->run && !is_keepsake_or_quotient_runend(qfi->qf, keepsake_start))
+          keepsake_start--;
+      keepsake_start++;
+      uint64_t keepsake_start_num_bits, current_num_bits;
+      const uint64_t keepsake_fp = read_fingerprint_bits(qfi->qf, keepsake_start, &keepsake_start_num_bits);
+      const uint64_t current_fp = read_fingerprint_bits(qfi->qf, qfi->current, &current_num_bits);
+      assert(keepsake_start_num_bits != current_num_bits || keepsake_fp != current_fp);
+  }
 
   if (is_runend(qfi->qf, qfi->current - 1)) {
     qfi->run++;
@@ -2126,7 +2154,7 @@ static inline int _qfi_next(QFi *qfi) {
     next_memento = (get_slot(qfi->qf, qfi->current) >> qfi->intra_slot_offset) & BITMASK(qfi->qf->metadata->value_bits);
   }
 
-  if (next_memento <= qfi->memento) {
+  if (next_memento < qfi->memento) {
     // Should not happen, means we could have ended the current slot here.
     assert(!next_memento_spans_multiple_slots); 
     qfi->current++;
@@ -2392,25 +2420,16 @@ int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
     METADATA_WORD(qf, occupieds, current_quotient) |= (1ULL << ((current_quotient) % QF_SLOTS_PER_BLOCK));
   }
 
-  int skip_memento = 0;
   for (uint64_t i = 1; i < nkeys; i++) {
     if (slot_buffer_index > qf->metadata->xnslots)
       return QF_INVALID;
-    if (!skip_memento)
-      _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
+    _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
     if (qf_hash_cmp(qf, sorted_hashes[i - 1], sorted_hashes[i]) > 0)
       return QF_INVALID;
     next_quotient = (sorted_hashes[i] >> value_bits) & BITMASK(quotient_bits);
     next_keepsake_remainder = ((sorted_hashes[i] >> (value_bits + quotient_bits)) & BITMASK(remainder_bits))
                                 | (qf->metadata->is_expandable ? 1ULL << remainder_bits : 0ULL);
     next_memento = sorted_hashes[i] & BITMASK(value_bits);
-    skip_memento = 0;
-
-    // Don't add the same fingerprint twice.
-    if (next_quotient == current_quotient && next_keepsake_remainder == current_keepsake_remainder && next_memento == current_memento) {
-      skip_memento = 1;
-      continue;
-    }
 
     if (next_quotient == current_quotient && next_keepsake_remainder != current_keepsake_remainder) {
       _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
@@ -2423,16 +2442,15 @@ int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
       _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
       // Mark runend of this quotient run.
       METADATA_WORD(qf, runends, slot_buffer_index - 1) |= (1ULL << ((slot_buffer_index - 1) % QF_SLOTS_PER_BLOCK));
-      uint64_t cur_block = (current_quotient + QF_SLOTS_PER_BLOCK) / QF_SLOTS_PER_BLOCK;
+      uint64_t cur_block = current_quotient / QF_SLOTS_PER_BLOCK + 1;
       int64_t offset = (slot_buffer_index) - (cur_block * QF_SLOTS_PER_BLOCK);
-      while (cur_block * QF_SLOTS_PER_BLOCK <= next_quotient && cur_block * QF_SLOTS_PER_BLOCK <= slot_buffer_index) {
+      while (cur_block * QF_SLOTS_PER_BLOCK <= next_quotient && cur_block * QF_SLOTS_PER_BLOCK < slot_buffer_index) {
         offset = (slot_buffer_index) - (cur_block * QF_SLOTS_PER_BLOCK);
         assert(offset >= 0);
-        if (offset < BITMASK(8 * sizeof(qf->blocks[0].offset))) {
+        if (offset < BITMASK(8 * sizeof(qf->blocks[0].offset)))
           get_block(qf, cur_block)->offset = (uint8_t)offset;
-        } else {
+        else
           get_block(qf, cur_block)->offset = (uint8_t)BITMASK(8 * sizeof(qf->blocks[0].offset));
-        }
         cur_block++;
       }
       current_quotient = (sorted_hashes[i] >> value_bits) & BITMASK(quotient_bits);
@@ -2441,8 +2459,8 @@ int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
         slot_buffer_index = current_quotient;
       current_run_start_slot = slot_buffer_index;
       // Start new keepsake and quotient run.
-      METADATA_WORD(qf, occupieds, current_quotient) |= (1ULL << ((current_quotient) % QF_SLOTS_PER_BLOCK));
       _keepsake_add_remainder(qf, next_keepsake_remainder, &slot_buffer, &slot_buffer_offset);
+      METADATA_WORD(qf, occupieds, current_quotient) |= (1ULL << ((current_quotient) % QF_SLOTS_PER_BLOCK));
     }
     current_quotient = next_quotient;
     assert(current_quotient < qf->metadata->nslots);
@@ -2452,8 +2470,8 @@ int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
   _keepsake_add_memento(qf, current_memento, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
   _keepsake_flush_mementos(qf, &slot_buffer_index, &slot_buffer, &slot_buffer_offset);
   METADATA_WORD(qf, runends, slot_buffer_index-1) |= (1ULL << ((slot_buffer_index-1) % QF_SLOTS_PER_BLOCK));
-  uint64_t cur_block = (current_run_start_slot + QF_SLOTS_PER_BLOCK) / QF_SLOTS_PER_BLOCK;
-  while (cur_block * QF_SLOTS_PER_BLOCK <= slot_buffer_index) {
+  uint64_t cur_block = current_quotient / QF_SLOTS_PER_BLOCK + 1;
+  while (cur_block * QF_SLOTS_PER_BLOCK < slot_buffer_index) {
     uint64_t offset = (slot_buffer_index) - (cur_block * QF_SLOTS_PER_BLOCK);
     if (offset < BITMASK(8 * sizeof(qf->blocks[0].offset))) {
       get_block(qf, cur_block)->offset = offset;
@@ -2462,6 +2480,9 @@ int qf_bulk_load(QF* qf, uint64_t* sorted_hashes, uint64_t nkeys)
     }
     cur_block++;
   }
+#ifdef DEBUG
+  validate_filter(qf);
+#endif /* DEBUG */
   return 0;
 }
 
@@ -2947,10 +2968,10 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
 
   // Extension exists. Walk through all mementos and insert in order.
   uint64_t memento_offset;
-  if (num_ext_bits) {
+  if (num_ext_bits > 0) {
     num_ext_bits -= qf->metadata->value_bits;
     current_index++;
-    while (num_ext_bits) {
+    while (num_ext_bits > 0) {
       current_index++;
       num_ext_bits -= qf->metadata->bits_per_slot;
     }
@@ -2986,7 +3007,7 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
         current_memento = next_memento;
       }
     } else {
-      uint64_t next_memento = (current_slot)&BITMASK(qf->metadata->value_bits);
+      uint64_t next_memento = current_slot & BITMASK(qf->metadata->value_bits);
       current_slot >>= qf->metadata->value_bits;
       if (current_memento > next_memento) {
         // Relying on mementos to be unique for this condition to be correct even if first memento is 0.
@@ -3132,12 +3153,15 @@ int qf_range_query(const QF* qf, uint64_t l_key, uint64_t r_key, uint8_t flags) 
 }
 
 int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
+#ifdef DEBUG
+    validate_filter(qf);
+#endif /* DEBUG */
   // TODO(chesetti): Handle case of extensions.
   uint64_t hash = key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
     abort(); 
   }
-  if (qf->metadata->noccupied_slots >= qf->metadata->nslots * 0.90 ||
+  if (qf->metadata->noccupied_slots >= qf->metadata->nslots * 0.95 ||
           qf->metadata->noccupied_slots + 1 >= qf->metadata->nslots) {
       if (qf->runtimedata->auto_resize) {
           fprintf(stderr, "Resizing the ARQF.\n");
@@ -3169,7 +3193,11 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     METADATA_WORD(qf, runends, hash_quotient) |= (1ULL << (hash_quotient % QF_SLOTS_PER_BLOCK));
     set_slot(qf, hash_quotient, slot_value);
     assert(run_end(qf, hash_quotient) == runend_index);
-    return 0;
+    qf->metadata->noccupied_slots++;
+#ifdef DEBUG
+    validate_filter(qf);
+#endif /* DEBUG */
+    return qf->metadata->key_remainder_bits;
   }
 
   if (!is_occupied(qf, hash_quotient) && runstart_index > hash_quotient) {
@@ -3182,7 +3210,10 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     METADATA_WORD(qf, occupieds, hash_quotient) |= (1ULL << (hash_quotient % 64));
     METADATA_WORD(qf, runends, runend_index+1) |= (1ULL << ((runend_index + 1) % 64));
     assert(run_end(qf, hash_quotient) == runend_index+1);
-    return 0;
+#ifdef DEBUG
+    validate_filter(qf);
+#endif /* DEBUG */
+    return qf->metadata->key_remainder_bits;
   }
 
   
@@ -3199,7 +3230,7 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   uint64_t keepsake_runend_index;
   int ret = find_colliding_fingerprint(qf, hash, &colliding_fingerprint, &target_index, &num_ext_bits, &keepsake_runend_index);
   uint64_t limit_index = keepsake_runend_index;
-  const uint64_t num_fingerprint_bits = qf->metadata->key_remainder_bits + num_ext_bits;
+  const uint64_t num_fingerprint_bits = qf->metadata->key_remainder_bits + num_ext_bits + qf->metadata->quotient_bits;
   if (ret == 0) { 
     // Keepsake exists. num_ext_bits, runend_index will be set to keepsake
     _overwrite_keepsake(qf, fingerprint_bits, num_fingerprint_bits, hash_memento, target_index, &limit_index, &keepsake_runend_index);
@@ -3209,15 +3240,13 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
     _overwrite_keepsake(qf, fingerprint_bits, num_fingerprint_bits, hash_memento, target_index, &limit_index, &keepsake_runend_index);
   } else if (colliding_fingerprint > 
           (hash_remainder | (qf->metadata->is_expandable ? 1ULL << qf->metadata->key_remainder_bits : 0ULL))) {
-      // printf("Remainder does not exist middle %016llx\n", key);
     // if remainder does not exist, will be either set to first remainder greater than hash_remainder
     // printf(" adding new keepsake in between\n");
     insert_one_slot(qf, hash_quotient, target_index, slot_value);
     METADATA_WORD(qf, runends, target_index) |= (1ULL << (target_index % 64));
     METADATA_WORD(qf, extensions, target_index) |= (1ULL << (target_index % 64));
-      assert(run_end(qf, hash_quotient) == runend_index+1);
+    assert(run_end(qf, hash_quotient) == runend_index+1);
   } else {
-      // printf("Remainder does not exist end %016llx\n", key);
     // if no remainder is greater, then target_index will be set to end of current_runend + 1.
     // printf(" adding new keepsake at end\n");
     uint64_t current_runend = run_end(qf, hash_quotient);
@@ -3230,32 +3259,18 @@ int qf_insert_memento(QF *qf, uint64_t key, uint8_t flags) {
   } 
 
 #ifdef DEBUG
-  {
-    uint64_t occupied_cnt = 0, runend_cnt = 0;
-    for (uint32_t i = 0; i < qf->metadata->xnslots; i++) {
-        occupied_cnt += is_occupied(qf, i);
-        runend_cnt += is_runend(qf, i);
-        assert(occupied_cnt >= runend_cnt);
-        if (occupied_cnt > runend_cnt)
-            assert(get_slot(qf, i) > 0);
-    }
-    assert(occupied_cnt == runend_cnt);
-    QFi qfi;
-    qf_iterator_from_position(qf, &qfi, 0);
-    for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi))
-        assert(qfi.current > 0);
-  }
+  validate_filter(qf);
 #endif /* DEBUG */
-  return 0;
+  return qf->metadata->key_remainder_bits + num_ext_bits + qf->metadata->quotient_bits 
+            + (num_ext_bits == -1 ? 0 : num_ext_bits);
 }
 
 int qf_insert_keepsake(QF *qf, uint64_t hash, uint32_t num_hash_bits,
                        uint64_t *mementos, uint32_t num_mementos, uint8_t flags) {
 #ifdef DEBUG
-  {
-      for (int32_t i = 1; i < num_mementos; i++)
-          assert(mementos[i] > mementos[i - 1]);
-  }
+    for (int32_t i = 1; i < num_mementos; i++)
+        assert(mementos[i] >= mementos[i - 1]);
+    validate_filter(qf);
 #endif /* DEBUG */
 
     if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
@@ -3347,6 +3362,13 @@ int qf_insert_keepsake(QF *qf, uint64_t hash, uint32_t num_hash_bits,
     uint64_t insert_index = runstart_index;
     if (is_occupied(qf, hash_quotient)) {
         lower_bound_remainder(qf, hash_remainder, &insert_index);
+#ifdef DEBUG
+        if (insert_index <= runend_index) {
+            uint64_t keepsake_start_num_bits;
+            const uint64_t keepsake_fp = read_fingerprint_bits(qf, insert_index, &keepsake_start_num_bits);
+            assert(keepsake_start_num_bits != num_fingerprint_bits || keepsake_fp != fingerprint_bits);
+        }
+#endif /* DEBUG */
         if (insert_index < empty_runs[0]) {
             shift_slots(qf, insert_index, empty_runs[0] - 1, new_slot_count);
             shift_runends(qf, insert_index, empty_runs[0] - 1, new_slot_count);
@@ -3415,26 +3437,63 @@ int qf_insert_keepsake(QF *qf, uint64_t hash, uint32_t num_hash_bits,
     _keepsake_flush_mementos(qf, &insert_index, &payload, &payload_offset);
 
 #ifdef DEBUG
-  {
-    uint64_t occupied_cnt = 0, runend_cnt = 0;
-    for (uint32_t i = 0; i < qf->metadata->xnslots; i++) {
-        occupied_cnt += is_occupied(qf, i);
-        runend_cnt += is_runend(qf, i);
-        assert(occupied_cnt >= runend_cnt);
-        if (occupied_cnt > runend_cnt)
-            assert(get_slot(qf, i) > 0);
-    }
-    assert(occupied_cnt == runend_cnt);
-    QFi qfi;
-    qf_iterator_from_position(qf, &qfi, 0);
-    for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi))
-        assert(qfi.current > 0);
-  }
+  validate_filter(qf);
 #endif /* DEBUG */
 }
 
 static inline int int64_t_compare(const void *a, const void *b) {
     return (*(int64_t *)a - *(int64_t *)b);
+}
+
+int qf_insert_keepsake_merge(QF *qf, const uint64_t hash, const uint32_t num_hash_bits,
+                             uint64_t *mementos, uint32_t num_mementos, uint8_t flags) {
+#ifdef DEBUG
+    validate_filter(qf);
+#endif /* DEBUG */
+    if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
+        abort(); 
+    }
+    const uint32_t quotient_bits = qf->metadata->quotient_bits;
+    const uint32_t remainder_bits = qf->metadata->key_remainder_bits;
+    const uint32_t value_bits = qf->metadata->value_bits;
+    const uint32_t hash_bits_per_slot = qf->metadata->bits_per_slot - qf->metadata->is_expandable;
+
+    const uint32_t num_fingerprint_bits = num_hash_bits - quotient_bits;
+
+    const uint64_t hash_quotient = hash & BITMASK(quotient_bits);
+    assert(hash_quotient < qf->metadata->nslots);
+    const uint64_t hash_remainder = ((hash >> quotient_bits) & BITMASK(remainder_bits))
+        | (qf->metadata->is_expandable ? 1ULL << (num_fingerprint_bits < remainder_bits ? num_fingerprint_bits : remainder_bits)
+                                       : 0ULL);
+
+    if (is_occupied(qf, hash_quotient)) {
+        uint64_t runstart_index = hash_quotient == 0 ? 0 : run_end(qf, hash_quotient - 1) + 1;
+        uint64_t keepsake_runend_index = run_end(qf, hash_quotient);
+        int64_t target_index = -1;
+
+        const uint64_t padded_hash = hash << value_bits;
+        int ret;
+        for (ret = next_matching_fingerprint(qf, padded_hash, &target_index); 
+                ret != -1;
+                ret= next_matching_fingerprint(qf, padded_hash, &target_index)) {
+            uint64_t num_fingerprint_bits;
+            const uint64_t slot_fingerprint = read_fingerprint_bits(qf, target_index, &num_fingerprint_bits);
+            if (num_fingerprint_bits + quotient_bits == num_hash_bits && slot_fingerprint == (hash >> quotient_bits)) {
+                for (int32_t i = 0; i < num_mementos; i++) {
+                    // Keepsake exists. num_ext_bits, runend_index will be set to keepsake
+                    uint64_t limit_index = keepsake_runend_index;
+                    _overwrite_keepsake(qf, hash, num_hash_bits, mementos[i], target_index, &limit_index, &keepsake_runend_index);
+                }
+#ifdef DEBUG
+                validate_filter(qf);
+#endif /* DEBUG */
+                return 1;
+            }
+        }
+    }
+
+    qsort(mementos, num_mementos, sizeof(mementos[0]), int64_t_compare);
+    return qf_insert_keepsake(qf, hash, num_hash_bits, mementos, num_mementos, flags);
 }
 
 int64_t qf_resize_malloc(QF *qf, uint64_t nslots) {
@@ -3484,21 +3543,7 @@ int64_t qf_resize_malloc(QF *qf, uint64_t nslots) {
 	memcpy(qf, &new_qf, sizeof(QF));
 
 #ifdef DEBUG
-  {
-    uint64_t occupied_cnt = 0, runend_cnt = 0;
-    for (uint32_t i = 0; i < qf->metadata->xnslots; i++) {
-        occupied_cnt += is_occupied(qf, i);
-        runend_cnt += is_runend(qf, i);
-        assert(occupied_cnt >= runend_cnt);
-        if (occupied_cnt > runend_cnt)
-            assert(get_slot(qf, i) > 0);
-    }
-    assert(occupied_cnt == runend_cnt);
-    QFi qfi;
-    qf_iterator_from_position(qf, &qfi, 0);
-    for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi))
-        assert(qfi.current > 0);
-  }
+  validate_filter(qf);
 #endif /* DEBUG */
 
 	return 1;

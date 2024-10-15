@@ -5,6 +5,7 @@
 #include "splinterdb/platform_linux/public_platform.h"
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include <iostream>
 
@@ -13,6 +14,17 @@
 #define MAX_VALUE(nbits) ((1ULL << (nbits)) - 1)
 #define BITMASK(nbits) \
   ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
+
+static inline uint64_t get_base_hash(QF *qf, uint64_t hash) {
+    const uint32_t quotient_bits = qf->metadata->quotient_bits;
+    const uint32_t orig_quotient_bits = qf->metadata->orig_quotient_bits;
+    const uint32_t quotient_bit_diff = quotient_bits - orig_quotient_bits;
+
+    const uint64_t fp_bits = hash >> quotient_bits;
+    const uint64_t orig_quotient = (hash >> quotient_bit_diff) & BITMASK(orig_quotient_bits);
+    const uint64_t extended_quotient_bits = hash & BITMASK(quotient_bit_diff);
+    return orig_quotient | (extended_quotient_bits << orig_quotient_bits) | (fp_bits << quotient_bits);
+}
 
 int InMemArqf_init(InMemArqf* arqf, uint64_t nslots, uint64_t key_bits, uint64_t value_bits, uint64_t seed, bool expandable) {
   QF* qf;
@@ -41,7 +53,7 @@ int InMemArqf_bulk_load(InMemArqf* arqf, uint64_t *sorted_hashes, uint64_t *keys
     }
     uint64_t fingerprint = ((hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits))
                     | (arqf->qf->metadata->is_expandable ? 1ULL << (quotient_bits + remainder_bits) : 0);
-    arqf->rhm.insert({fingerprint, key});
+    arqf->rhm.insert({get_base_hash(arqf->qf, fingerprint), key});
   }
   return 0;
 }
@@ -53,14 +65,13 @@ inline uint8_t min_diff_fingerprint_size(uint64_t x, uint64_t y, int quotient_si
   }
   uint8_t fingerprint_size = quotient_size + remainder_size;
   while ((x & BITMASK(fingerprint_size)) == (y & BITMASK(fingerprint_size))) {
-      if (fingerprint_size == quotient_size + remainder_size) {
+      if (fingerprint_size == quotient_size + remainder_size)
         fingerprint_size += memento_size; // First extension is memento size.
-      }
-      else  fingerprint_size += (remainder_size + memento_size);
-      if (fingerprint_size > 64) {
+      else 
+          fingerprint_size += (remainder_size + memento_size);
+      if (fingerprint_size > 64)
         return 255;
-      }
-  };
+  }
   return fingerprint_size;
 }
 
@@ -117,7 +128,7 @@ inline int adapt_keepsake(
   uint64_t current_keepsake_end = keepsake_end;
   uint64_t last_overwritten_index = keepsake_start-1;
   uint8_t min_required_fingerprint_size = 0;
-  arqf->rhm.erase(keepsake_fingerprint);
+  arqf->rhm.erase(get_base_hash(arqf->qf, keepsake_fingerprint));
   
   for (int i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
@@ -142,9 +153,9 @@ inline int adapt_keepsake(
 #if DEBUG
       uint64_t collision_hash = arqf_hash(arqf->qf, key_in_keepsake);
       uint64_t collision_prefix = (collision_hash) >> memento_size;
-      printf("Not enough bits to break collision\n", fp_prefix, collision_prefix);
+      printf("Not enough bits to break collision\n");
 #endif
-      arqf->rhm.insert({keepsake_fingerprint, key_in_keepsake});
+      arqf->rhm.insert({get_base_hash(arqf->qf, keepsake_fingerprint), key_in_keepsake});
     }
     return -1; // Failed to adapt;
   }
@@ -169,7 +180,7 @@ inline int adapt_keepsake(
         &last_overwritten_index, 
         &current_keepsake_end
       );
-    arqf->rhm.insert({new_fingerprint_bits, key_in_keepsake});
+    arqf->rhm.insert({get_base_hash(arqf->qf, new_fingerprint_bits), key_in_keepsake});
   }
 
 #if DEBUG
@@ -183,6 +194,9 @@ inline int adapt_keepsake(
 }
 
 inline int maybe_adapt_keepsake_expandable(InMemArqf *arqf, uint64_t fp_key, uint64_t fp_hash, int query_type) {
+#ifdef DEBUG
+    validate_filter(arqf->qf);
+#endif /* DEBUG */
     const uint64_t quotient_size = arqf->qf->metadata->quotient_bits;
     const uint64_t remainder_size = arqf->qf->metadata->key_remainder_bits;
     const uint64_t memento_size = arqf->qf->metadata->value_bits;
@@ -217,7 +231,7 @@ inline int maybe_adapt_keepsake_expandable(InMemArqf *arqf, uint64_t fp_key, uin
         uint64_t colliding_fingerprint = read_fingerprint_bits(arqf->qf, matching_fp_pos[i], &matching_fp_size);
         colliding_fingerprint |= 1ULL << matching_fp_size;
         colliding_fingerprint = (colliding_fingerprint << quotient_size) | bucket_index;
-        num_colliding_keys += arqf->rhm.count(colliding_fingerprint);
+        num_colliding_keys += arqf->rhm.count(get_base_hash(arqf->qf, colliding_fingerprint));
     }
     uint64_t colliding_keys[num_colliding_keys];
 
@@ -227,7 +241,7 @@ inline int maybe_adapt_keepsake_expandable(InMemArqf *arqf, uint64_t fp_key, uin
         uint64_t colliding_fingerprint = read_fingerprint_bits(arqf->qf, matching_fp_pos[i], &matching_fp_size);
         colliding_fingerprint |= 1ULL << matching_fp_size;
         colliding_fingerprint = (colliding_fingerprint << quotient_size) | bucket_index;
-        auto range = arqf->rhm.equal_range(colliding_fingerprint);
+        auto range = arqf->rhm.equal_range(get_base_hash(arqf->qf, colliding_fingerprint));
         for (auto it = range.first; it != range.second; it++)
             colliding_keys[colliding_keys_ind++] = it->second;
     }
@@ -240,8 +254,9 @@ inline int maybe_adapt_keepsake_expandable(InMemArqf *arqf, uint64_t fp_key, uin
     for (int32_t i = matching_fp_ind - 1; i >= 0; i--) {
         uint64_t matching_fp_size;
         uint64_t keepsake_fingerprint = read_fingerprint_bits(arqf->qf, matching_fp_pos[i], &matching_fp_size);
-        keepsake_fingerprint |= 1ULL << matching_fp_size;
-        arqf->rhm.erase(keepsake_fingerprint);
+        keepsake_fingerprint = ((keepsake_fingerprint | (1ULL << matching_fp_size)) << quotient_size)
+                                | bucket_index;
+        arqf->rhm.erase(get_base_hash(arqf->qf, keepsake_fingerprint));
 
         const uint32_t keepsake_size = get_keepsake_len(arqf->qf, matching_fp_pos[i]);
         remove_keepsake_and_shift_remainders_and_runends_and_offsets(arqf->qf,
@@ -270,21 +285,24 @@ inline int maybe_adapt_keepsake_expandable(InMemArqf *arqf, uint64_t fp_key, uin
     for (int32_t i = 1; i < num_colliding_keys; i++) {
         cur_fp = (hash_key_pairs[i].first >> memento_size) & BITMASK(min_new_fp_size);
         if (cur_fp != prev_fp) {
-            qf_insert_keepsake(arqf->qf, prev_fp, min_new_fp_size, mementos, num_mementos, QF_KEY_IS_HASH);
+            qf_insert_keepsake_merge(arqf->qf, prev_fp, min_new_fp_size, mementos, num_mementos, QF_KEY_IS_HASH);
             num_mementos = 0;
             prev_fp = cur_fp;
         }
         mementos[num_mementos++] = hash_key_pairs[i].first & BITMASK(memento_size);
     }
-    qf_insert_keepsake(arqf->qf, prev_fp, min_new_fp_size, mementos, num_mementos, QF_KEY_IS_HASH);
-    for (auto [hash, key] : hash_key_pairs)
-        arqf->rhm.insert({(hash >> memento_size) | (1ULL << min_new_fp_size), key});
+    qf_insert_keepsake_merge(arqf->qf, prev_fp, min_new_fp_size, mementos, num_mementos, QF_KEY_IS_HASH);
+    for (auto [hash, key] : hash_key_pairs) {
+        const uint64_t rhm_hash = ((hash >> memento_size) & BITMASK(min_new_fp_size)) | (1ULL << min_new_fp_size);
+        arqf->rhm.insert({get_base_hash(arqf->qf, rhm_hash), key});
+    }
 #if DEBUG
   for (uint64_t i=0; i < num_colliding_keys; i++) {
     uint64_t key_in_keepsake = colliding_keys[i];
     assert(qf_point_query(arqf->qf, key_in_keepsake, 0) == 1);
   }
   assert(qf_point_query(arqf->qf, (fp_hash << memento_size) | fp_key & BITMASK(memento_size), QF_KEY_IS_HASH) == 0);
+  validate_filter(arqf->qf);
 #endif
     return 0;
 }
@@ -374,3 +392,122 @@ int InMemArqf_adapt(InMemArqf* arqf, uint64_t fp_key, int flags) {
   }
   return maybe_adapt_keepsake(arqf, fp_key, fp_hash, POINT_QUERY);
 }
+
+
+static inline int int64_t_compare(const void *a, const void *b) {
+    return (*(int64_t *)a - *(int64_t *)b);
+}
+
+static inline uint64_t move_one_bit_in_hash(QF *qf, uint64_t hash) {
+    const uint32_t quotient_bit_diff = qf->metadata->quotient_bits - qf->metadata->orig_quotient_bits;
+    const uint64_t fp_bits = hash >> qf->metadata->quotient_bits;
+    const uint64_t orig_quotient = (hash >> (quotient_bit_diff - 1)) & BITMASK(qf->metadata->orig_quotient_bits);
+    const uint64_t extended_quotient_bits = (hash & BITMASK(quotient_bit_diff - 1))
+        | (((hash >> qf->metadata->quotient_bits) & 1ULL) << (quotient_bit_diff - 1));
+    return extended_quotient_bits | (orig_quotient << quotient_bit_diff) | (fp_bits << qf->metadata->quotient_bits);
+}
+
+static inline void move_and_maybe_rejuvenate_keepsake(InMemArqf *arqf, QF *new_qf,
+                                                      uint64_t hash, uint32_t hash_len,
+                                                      uint64_t *mementos, uint32_t& num_mementos) {
+    const uint32_t quotient_size = new_qf->metadata->quotient_bits;
+    const uint32_t remainder_size = new_qf->metadata->key_remainder_bits;
+    const uint32_t memento_size = new_qf->metadata->value_bits;
+
+    if (hash_len < quotient_size) {     // Rejuvenate using reverse map
+        const uint32_t rejuv_hash_size = quotient_size + remainder_size;
+        const uint64_t capped_hash = hash | (1ULL << hash_len);
+        uint64_t num_colliding_keys = arqf->rhm.count(get_base_hash(arqf->qf, capped_hash));
+        uint64_t colliding_keys[num_colliding_keys];
+
+        auto range = arqf->rhm.equal_range(get_base_hash(arqf->qf, capped_hash));
+        int colliding_keys_ind = 0;
+        for (auto it = range.first; it != range.second; it++)
+            colliding_keys[colliding_keys_ind++] = it->second;
+        arqf->rhm.erase(get_base_hash(arqf->qf, capped_hash));
+
+        std::pair<uint64_t, uint64_t> hash_key_pairs[num_colliding_keys];
+        std::transform(colliding_keys, colliding_keys + num_colliding_keys, hash_key_pairs,
+                [=](uint64_t key) { return std::make_pair(arqf_hash(new_qf, key), key); });
+        std::sort(hash_key_pairs, hash_key_pairs + num_colliding_keys);
+        num_colliding_keys = std::unique(hash_key_pairs, hash_key_pairs + num_colliding_keys) - hash_key_pairs;
+        uint64_t prev_fp = (hash_key_pairs[0].first >> memento_size) & BITMASK(rejuv_hash_size), cur_fp;
+        num_mementos = 0;
+        mementos[num_mementos++] = hash_key_pairs[0].first & BITMASK(memento_size);
+        for (int32_t i = 1; i < num_colliding_keys; i++) {
+            cur_fp = (hash_key_pairs[i].first >> memento_size) & BITMASK(rejuv_hash_size);
+            if (cur_fp != prev_fp) {
+                qf_insert_keepsake_merge(new_qf, prev_fp, rejuv_hash_size, mementos, num_mementos, QF_KEY_IS_HASH);
+                num_mementos = 0;
+                prev_fp = cur_fp;
+            }
+            mementos[num_mementos++] = hash_key_pairs[i].first & BITMASK(memento_size);
+        }
+        qf_insert_keepsake_merge(new_qf, prev_fp, rejuv_hash_size, mementos, num_mementos, QF_KEY_IS_HASH);
+        for (int32_t i = 0; i < num_colliding_keys; i++) {
+            const auto [hash, key] = hash_key_pairs[i];
+            const uint64_t rhm_hash = ((hash >> memento_size) & BITMASK(rejuv_hash_size)) | (1ULL << rejuv_hash_size);
+            arqf->rhm.insert({get_base_hash(new_qf, rhm_hash), key});
+        }
+    }
+    else
+        qf_insert_keepsake_merge(new_qf, hash, hash_len, mementos, num_mementos, QF_KEY_IS_HASH);
+}
+
+int InMemArqf_expand(InMemArqf *arqf) {
+    std::cerr << "EXPANSION JUTSU!!!" << std::endl;
+    QF *qf = arqf->qf;
+    const uint64_t nslots = 2 * qf->metadata->nslots;
+
+	QF new_qf;
+	if (!qf_malloc(&new_qf, nslots, qf->metadata->key_bits + 1, qf->metadata->value_bits,
+                   qf->metadata->hash_mode, qf->metadata->seed, qf->metadata->is_expandable))
+        return 0;
+	if (qf->runtimedata->auto_resize)
+        qf_set_auto_resize(&new_qf, true);
+    new_qf.metadata->orig_quotient_bits = qf->metadata->orig_quotient_bits;
+
+	uint64_t current_run = 0;
+	uint64_t current_index = 0;
+	uint64_t last_index = -1;
+
+    uint64_t hash, mementos[50 * (1ULL << new_qf.metadata->value_bits) + 50];
+    uint32_t hash_len, num_mementos = 0;
+	QFi qfi;
+    qf_iterator_from_position(qf, &qfi, 0);
+	qfi_get_hash(&qfi, &hash, &hash_len, mementos + num_mementos);
+    hash = move_one_bit_in_hash(&new_qf, hash);
+    num_mementos++;
+    for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi)) {
+        uint64_t new_hash, new_memento;
+        uint32_t new_hash_len;
+        qfi_get_hash(&qfi, &new_hash, &new_hash_len, &new_memento);
+        new_hash = move_one_bit_in_hash(&new_qf, new_hash);
+        if (new_hash_len == hash_len && new_hash == hash)
+            mementos[num_mementos++] = new_memento;
+        else {
+            move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, num_mementos);
+            hash = new_hash;
+            hash_len = new_hash_len;
+            mementos[0] = new_memento;
+            num_mementos = 1;
+        }
+    }
+    move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, num_mementos);
+
+	qf_free(qf);
+	memcpy(qf, &new_qf, sizeof(QF));
+
+	return 1;
+}
+
+int InMemArqf_insert(InMemArqf *arqf, uint64_t key) {
+    QF *qf = arqf->qf;
+    const uint64_t hash = arqf_hash(qf, key);
+    const uint32_t required_hash_len = qf_insert_memento(qf, hash, QF_KEY_IS_HASH);
+    const uint64_t rhm_hash = ((hash >> qf->metadata->value_bits) & BITMASK(required_hash_len))
+                                | (1ULL << required_hash_len);
+    arqf->rhm.insert({get_base_hash(arqf->qf, rhm_hash), key});
+    return 1;
+}
+

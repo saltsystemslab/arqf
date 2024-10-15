@@ -14,5 +14,7 @@ int InMemArqf_init(InMemArqf* arqf, uint64_t nslots, uint64_t key_bits, uint64_t
 int InMemArqf_bulk_load(InMemArqf* arqf, uint64_t *sorted_hashes, uint64_t *keys, uint64_t nkeys, int flags);
 int InMemArqf_adapt(InMemArqf* arqf, uint64_t fp_key, int flags);
 int InMemArqf_adapt_range(InMemArqf* arqf, uint64_t left, uint64_t right, int flags);
+int InMemArqf_expand(InMemArqf *arqf);
+int InMemArqf_insert(InMemArqf *arqf, uint64_t key);
 
 #endif

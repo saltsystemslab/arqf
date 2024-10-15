@@ -190,7 +190,11 @@ template <typename value_type>
 inline void insert_arqf(InMemArqf* arqf, const value_type key)
 {
   QF* qf = arqf->qf;
-  qf_insert_memento(qf, arqf_hash(qf, key), QF_KEY_IS_HASH);
+  if (qf->metadata->noccupied_slots >= qf->metadata->nslots * 0.95 ||
+          qf->metadata->noccupied_slots + 1 >= qf->metadata->nslots) {
+      InMemArqf_expand(arqf);
+  }
+  InMemArqf_insert(arqf, key);
 }
 
 template <typename value_type>

@@ -36,13 +36,13 @@ for adversarial_rate in 1 5 10
 do
 for filter in adaptive_expandable_arqf_inmem #adaptive_expandable_arqf_splinterdb 
 do
-  ${BIN_DIR}/bench/bench_${filter} 14 \
+  ${BIN_DIR}/bench/bench_${filter} 22 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/0_quniform_trial_0/left ${WORKLOAD_DIR}/0_quniform_trial_0/right ${WORKLOAD_DIR}/0_quniform_trial_0/result \
     --csv ${WORKLOAD_DIR}/0_quniform_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate ${adversarial_rate}
 
-  ${BIN_DIR}/bench/bench_${filter} 18 \
+  ${BIN_DIR}/bench/bench_${filter} 22 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/5_quniform_trial_0/left ${WORKLOAD_DIR}/5_quniform_trial_0/right ${WORKLOAD_DIR}/5_quniform_trial_0/result \
     --csv ${WORKLOAD_DIR}/5_quniform_trial_0/${filter}_${TEST_TYPE}.csv \
