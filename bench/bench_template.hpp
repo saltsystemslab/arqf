@@ -254,17 +254,15 @@ void experiment_expandability(
                 f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
                 std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
             }
-            else {
-                std::cerr << "START EXPANSION PROCESS" << std::endl;
-                std::cerr << "current_dataset_size=" << current_dataset_size << std::endl;
-                start_timer(expansion_time);
-                for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++)
-                    insert_f(f, keys[current_dataset_size + i]);
-                measure_timer(expansion_time);
-                test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
-                current_dataset_size = std::min(current_dataset_size * 2, N);
-                std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
-            }
+            std::cerr << "START EXPANSION PROCESS" << std::endl;
+            std::cerr << "current_dataset_size=" << current_dataset_size << std::endl;
+            start_timer(expansion_time);
+            for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++)
+                insert_f(f, keys[current_dataset_size + i]);
+            measure_timer(expansion_time);
+            test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
+            current_dataset_size = std::min(current_dataset_size * 2, N);
+            std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
         }
 
         auto fp = 0, fn = 0, fa = 0;
@@ -521,36 +519,52 @@ void experiment_expandability_disk(
     const uint32_t max_schema_len = 128;
     const uint32_t max_conn_config_len = 128;
 
-    if (std::filesystem::exists(wt_home))
-        std::filesystem::remove_all(wt_home);
-    std::filesystem::create_directory(wt_home);
-
     WT_CONNECTION *conn;
     WT_SESSION *session;
     WT_CURSOR *cursor;
     char table_schema[max_schema_len];
     char connection_config[max_conn_config_len];
     sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
-    sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", buffer_pool_size_mb);
+    uint64_t current_buffer_pool_size_mb = buffer_pool_size_mb;
+    sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
+
+    if (std::filesystem::exists(wt_home))
+        std::filesystem::remove_all(wt_home);
+    std::filesystem::create_directory(wt_home);
 
     error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
     error_check(conn->open_session(conn, NULL, NULL, &session));
-    error_check(session->create(session, "table:bm", table_schema));
-    error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
+    error_check(session->create(session, "table:access", table_schema));
+    error_check(session->open_cursor(session, "table:access", NULL, NULL, &cursor));
+    std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
 
     SimpleBigInt big_int_k(key_len), big_int_v(val_len);
     SimpleBigInt big_int_l(key_len), big_int_r(key_len);
-
-    std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
-
     const uint64_t N = keys.size();
     const uint64_t n_queries = queries.size() / (expansion_count + 1);
+    std::cout << "[+] n_queries=" << n_queries << std::endl;
     uint64_t current_dataset_size = N >> expansion_count;
-    auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
+    error_check(cursor->reset(cursor));
+    for (uint32_t i = 0; i < current_dataset_size; i++) {
+        SimpleBigInt big_int_k(key_len), big_int_v(val_len);
+        big_int_k = keys[i];
+        big_int_v.randomize();
+        insert_kv(cursor, reinterpret_cast<char *>(big_int_k.num), reinterpret_cast<char *>(big_int_v.num));
+    }
 
+    auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
 
     for (uint32_t expansion = 0; expansion <= expansion_count; expansion++) {
+        error_check(conn->close(conn, NULL)); /* Close all handles. */
+        current_buffer_pool_size_mb = ((buffer_pool_size_mb << (20 - expansion_count + expansion)) - size_f(f)) >> 20;
+        sprintf(connection_config, "statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
+        error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
+        error_check(conn->open_session(conn, NULL, NULL, &session));
+        error_check(session->create(session, "table:access", table_schema));
+        error_check(session->open_cursor(session, "table:access", NULL, NULL, &cursor));
+        std::cerr << "[+] reinit cache size to " << current_buffer_pool_size_mb << "MB" << std::endl;
+
         std::string expansion_str = std::to_string(expansion);
         auto size = size_f(f);
         test_out.add_measure(std::string("size_") + expansion_str, size);
@@ -566,8 +580,10 @@ void experiment_expandability_disk(
                 test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
                 std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
             }
-            std::cerr << "START EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << std::endl;
+            std::cerr << "START EXPANSION PROCESS" << std::endl;
+            std::cerr << "current_dataset_size=" << current_dataset_size << std::endl;
             start_timer(expansion_time);
+            error_check(cursor->reset(cursor));
             for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++) {
                 SimpleBigInt big_int_k(key_len), big_int_v(val_len);
                 big_int_k = keys[current_dataset_size + i];
@@ -637,7 +653,7 @@ void experiment_expandability_disk(
         uint64_t adversary_idx = 0;
 
         start_timer(query_time);
-        for (uint64_t i=num_warmup_queries; i < queries.size(); i++) {
+        for (uint64_t i = num_warmup_queries; i < queries.size(); i++) {
             auto q = queries[i];
             const auto [l, r, orig] = q;
             uint64_t left = l;
@@ -702,6 +718,7 @@ void experiment_expandability_disk(
 
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
+    error_check(conn->close(conn, NULL)); /* Close all handles. */
 }
 
 

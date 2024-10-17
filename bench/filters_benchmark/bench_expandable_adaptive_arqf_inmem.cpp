@@ -130,60 +130,60 @@ __attribute__((always_inline)) static inline uint32_t fast_reduce(uint32_t hash,
 template <typename t_itr, typename... Args>
 inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk, Args... args)
 {
-  auto&& t = std::forward_as_tuple(args...);
-  auto queries_temp = std::get<0>(t);
-  auto query_lengths = std::vector<uint64_t>(queries_temp.size());
-  std::transform(queries_temp.begin(), queries_temp.end(), query_lengths.begin(), [](auto x) {
-    auto [left, right, result] = x;
-    return right - left + 1;
-  });
-  const uint64_t n_items = std::distance(begin, end);
-  //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
-  const uint64_t seed = 1380;
-  const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-  const double load_factor = 0.90;
-  const uint64_t n_slots = n_items / load_factor + std::sqrt(n_items);
-  uint32_t memento_bits = 1;
-  while ((1ULL << memento_bits) < max_range_size)
-    memento_bits++;
-  memento_bits = memento_bits < 2 ? 2 : memento_bits;
-  const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 3.125);
-  if (bpk * load_factor - memento_bits - 3.125 < 0) {
-    abort();
-  }
-  uint32_t key_size = 0;
-  while ((1ULL << key_size) < n_slots)
-    key_size++;
-  key_size += fingerprint_size;
-  std::cerr << "key_size=" << key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
+    auto&& t = std::forward_as_tuple(args...);
+    auto queries_temp = std::get<0>(t);
+    auto query_lengths = std::vector<uint64_t>(queries_temp.size());
+    std::transform(queries_temp.begin(), queries_temp.end(), query_lengths.begin(), [](auto x) {
+            auto [left, right, result] = x;
+            return right - left + 1;
+        });
+    const uint64_t n_items = std::distance(begin, end);
+    //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
+    const uint64_t seed = 1380;
+    const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
+    const double load_factor = 0.90;
+    const uint64_t n_slots = n_items / load_factor + 10 * std::sqrt(n_items);
+    uint32_t memento_bits = 1;
+    while ((1ULL << memento_bits) < max_range_size)
+        memento_bits++;
+    memento_bits = memento_bits < 2 ? 2 : memento_bits;
+    const uint32_t fingerprint_size = round(bpk * load_factor - memento_bits - 3.125);
+    if (bpk * load_factor - memento_bits - 3.125 < 0) {
+        abort();
+    }
+    uint32_t key_size = 0;
+    while ((1ULL << key_size) < n_slots)
+        key_size++;
+    key_size += fingerprint_size;
+    std::cerr << "key_size=" << key_size << " fingerprint_size=" << fingerprint_size << " memento_bits=" << memento_bits << std::endl;
 
-  InMemArqf* arqf = new InMemArqf();
-  InMemArqf_init(arqf, n_slots, key_size, memento_bits, seed, true);
-  qf_set_auto_resize(arqf->qf, true);
+    InMemArqf* arqf = new InMemArqf();
+    InMemArqf_init(arqf, n_slots, key_size, memento_bits, seed, true);
+    //qf_set_auto_resize(arqf->qf, true);
 
-  start_timer(build_time);
+    start_timer(build_time);
 
-  auto key_hashes = std::vector<uint64_t>(n_items);
-  std::transform(begin, end, key_hashes.begin(), [&](auto x) {
-    uint64_t hash = arqf_hash(arqf->qf, x);
-    return hash & BITMASK(arqf->qf->metadata->quotient_bits 
-                          + arqf->qf->metadata->value_bits 
-                          + arqf->qf->metadata->key_remainder_bits);
-  });
-  auto keys = std::vector<uint64_t>(n_items);
-  std::transform(begin, end, keys.begin(), [&](auto x) {
-    return x;
-  });
+    auto key_hashes = std::vector<uint64_t>(n_items);
+    std::transform(begin, end, key_hashes.begin(), [&](auto x) {
+            uint64_t hash = arqf_hash(arqf->qf, x);
+            return hash & BITMASK(arqf->qf->metadata->quotient_bits 
+                    + arqf->qf->metadata->value_bits 
+                    + arqf->qf->metadata->key_remainder_bits);
+            });
+    auto keys = std::vector<uint64_t>(n_items);
+    std::transform(begin, end, keys.begin(), [&](auto x) {
+            return x;
+        });
 
-  std::sort(key_hashes.begin(), key_hashes.end(), [=](const auto& lhs, const auto& rhs) { return qf_hash_cmp(arqf->qf, lhs, rhs) < 0; });
-  int retcode = InMemArqf_bulk_load(arqf, &key_hashes[0], &keys[0], key_hashes.size(), 0);
-  if (retcode < 0) {
-    std::cerr << "Failed to initialize iterator" << std::endl;
-    abort();
-  }
-  stop_timer(build_time);
-  check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
-  return arqf;
+    std::sort(key_hashes.begin(), key_hashes.end(), [=](const auto& lhs, const auto& rhs) { return qf_hash_cmp(arqf->qf, lhs, rhs) < 0; });
+    int retcode = InMemArqf_bulk_load(arqf, &key_hashes[0], &keys[0], key_hashes.size(), 0);
+    if (retcode < 0) {
+        std::cerr << "Failed to initialize iterator" << std::endl;
+        abort();
+    }
+    stop_timer(build_time);
+    check_iteration_validity(arqf->qf, &key_hashes[0], key_hashes.size());
+    return arqf;
 }
 
 template <typename value_type>
@@ -314,25 +314,25 @@ void run_test(
   }
 }
 
-int main(int argc, char const* argv[])
+int main(int argc, char const *argv[])
 {
-  auto parser = init_parser("bench-adaptivity");
-  try {
-    parser.parse_args(argc, argv);
-  } catch (const std::runtime_error& err) {
-    std::cerr << err.what() << std::endl;
-    std::cerr << parser;
-    std::exit(1);
-  }
-  auto test_type = parser.get<std::string>("--test-type");
-  run_test(parser,
-      pass_fun(init_arqf),
-      pass_ref(insert_arqf),
-      pass_ref(query_arqf),
-      pass_ref(adapt_arqf),
-      pass_ref(size_arqf),
-      pass_ref(add_metadata));
-  print_test();
-  return 0;
+    auto parser = init_parser("bench-expandability");
+    try {
+        parser.parse_args(argc, argv);
+    } catch (const std::runtime_error& err) {
+        std::cerr << err.what() << std::endl;
+        std::cerr << parser;
+        std::exit(1);
+    }
+    auto test_type = parser.get<std::string>("--test-type");
+    run_test(parser,
+            pass_fun(init_arqf),
+            pass_ref(insert_arqf),
+            pass_ref(query_arqf),
+            pass_ref(adapt_arqf),
+            pass_ref(size_arqf),
+            pass_ref(add_metadata));
+    print_test();
+    return 0;
 }
 

@@ -114,6 +114,9 @@ function(compile_bench ds)
 
       target_link_libraries(bench_adaptive_arqf_splinterdb arqflib) 
       target_compile_options(bench_adaptive_arqf_splinterdb INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+
+      target_link_libraries(bench_expandable_adaptive_arqf_splinterdb arqflib) 
+      target_compile_options(bench_expandable_adaptive_arqf_splinterdb INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
     elseif (ds MATCHES "grafite")
         add_library(grafitelib INTERFACE)
         if ("sux" IN_LIST SUCCINCT_LIBS)

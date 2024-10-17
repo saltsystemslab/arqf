@@ -254,10 +254,8 @@ static inline int maybe_adapt_keepsake_expandable(ARQF *arqf, uint64_t fp_key, u
         colliding_keys = calloc(num_colliding_keys + num_new_colliding_keys, sizeof(uint64_t));
         memcpy(colliding_keys, tmp, num_colliding_keys * sizeof(uint64_t));
         free(tmp);
-        for (uint64_t i = 0; i < result_val.length; i += MAX_VAL_SIZE) {
-            uint64_t key = *(uint64_t*)(slice_data(result_val) + i);
-            colliding_keys[num_colliding_keys + i / MAX_VAL_SIZE] = key;
-        }
+        for (uint64_t i = 0; i < result_val.length; i += MAX_VAL_SIZE)
+            colliding_keys[num_colliding_keys + i / MAX_VAL_SIZE] = *(uint64_t*)(slice_data(result_val) + i);
         num_colliding_keys += num_new_colliding_keys;
     }
 
@@ -292,7 +290,6 @@ static inline int maybe_adapt_keepsake_expandable(ARQF *arqf, uint64_t fp_key, u
         hash_key_pairs[2 * i] = arqf_hash(arqf->qf, colliding_keys[i]);
         hash_key_pairs[2 * i + 1] = colliding_keys[i];
     }
-    free(colliding_keys);
     qsort(hash_key_pairs, num_colliding_keys, 2 * sizeof(uint64_t), int64_t_compare);
     uint8_t min_new_fp_size = 0;
     for (int32_t i = 0; i < num_colliding_keys; i++) {
@@ -332,6 +329,7 @@ static inline int maybe_adapt_keepsake_expandable(ARQF *arqf, uint64_t fp_key, u
   assert(qf_point_query(arqf->qf, (fp_hash << memento_size) | fp_key & BITMASK(memento_size), QF_KEY_IS_HASH) == 0);
   validate_filter(arqf->qf);
 #endif
+    free(colliding_keys);
     return 0;
 }
 
@@ -430,20 +428,20 @@ static inline uint64_t move_one_bit_in_hash(QF *qf, uint64_t hash) {
     const uint64_t fp_bits = hash >> qf->metadata->quotient_bits;
     const uint64_t orig_quotient = (hash >> (quotient_bit_diff - 1)) & BITMASK(qf->metadata->orig_quotient_bits);
     const uint64_t extended_quotient_bits = (hash & BITMASK(quotient_bit_diff - 1))
-        | (((hash >> qf->metadata->quotient_bits) & 1ULL) << (quotient_bit_diff - 1));
+        | (((hash >> (qf->metadata->quotient_bits - 1)) & 1ULL) << (quotient_bit_diff - 1));
     return extended_quotient_bits | (orig_quotient << quotient_bit_diff) | (fp_bits << qf->metadata->quotient_bits);
 }
 
 static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
                                                       uint64_t hash, uint32_t hash_len,
-                                                      uint64_t *mementos, uint32_t *num_mementos) {
+                                                      uint64_t *mementos, uint32_t num_mementos) {
     const uint32_t quotient_size = new_qf->metadata->quotient_bits;
     const uint32_t remainder_size = new_qf->metadata->key_remainder_bits;
     const uint32_t memento_size = new_qf->metadata->value_bits;
 
     if (hash_len < quotient_size) {     // Rejuvenate using reverse map
         const uint32_t rejuv_hash_size = quotient_size + remainder_size;
-        const uint64_t capped_hash = hash | (1ULL << hash_len);
+        const uint64_t capped_hash = hash | (new_qf->metadata->is_expandable ? 1ULL << hash_len : 0ULL);
 
         char buffer[MAX_KEY_SIZE];
         uint64_t db_conv_hash = get_base_hash(arqf->qf, capped_hash);
@@ -460,7 +458,6 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
             uint64_t key = *(uint64_t*)(slice_data(result_val) + i);
             colliding_keys[i / MAX_VAL_SIZE] = key;
         }
-
         db_query = padded_slice(&db_conv_hash, MAX_KEY_SIZE, sizeof(db_conv_hash), buffer, 0);
         splinterdb_delete(arqf->rhm, db_query); // Delete the old keys. They will be reinserted even if they map to same fingerprint.
 
@@ -470,28 +467,20 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
             hash_key_pairs[2 * i + 1] = colliding_keys[i];
         }
         qsort(hash_key_pairs, num_colliding_keys, 2 * sizeof(uint64_t), int64_t_compare);
-        int32_t unique_ind = 0;
-        for (int32_t i = 0; i < num_colliding_keys; i++) {
-            if (i == 0 || hash_key_pairs[2 * i] != hash_key_pairs[2 * i - 2]) {
-                hash_key_pairs[2 * unique_ind] = hash_key_pairs[2 * i];
-                hash_key_pairs[2 * unique_ind + 1] = hash_key_pairs[2 * i + 1];
-                unique_ind++;
-            }
-        }
-        num_colliding_keys = unique_ind;
         uint64_t prev_fp = (hash_key_pairs[0] >> memento_size) & BITMASK(rejuv_hash_size), cur_fp;
-        *num_mementos = 0;
-        mementos[(*num_mementos)++] = hash_key_pairs[0] & BITMASK(memento_size);
+        uint32_t num_mementos = 0;
+        uint64_t mementos[num_colliding_keys];
+        mementos[num_mementos++] = hash_key_pairs[0] & BITMASK(memento_size);
         for (int32_t i = 1; i < num_colliding_keys; i++) {
             cur_fp = (hash_key_pairs[2 * i] >> memento_size) & BITMASK(rejuv_hash_size);
             if (cur_fp != prev_fp) {
-                qf_insert_keepsake_merge(new_qf, prev_fp, rejuv_hash_size, mementos, *num_mementos, QF_KEY_IS_HASH);
-                *num_mementos = 0;
+                qf_insert_keepsake_merge(new_qf, prev_fp, rejuv_hash_size, mementos, num_mementos, QF_KEY_IS_HASH);
+                num_mementos = 0;
                 prev_fp = cur_fp;
             }
-            mementos[(*num_mementos)++] = hash_key_pairs[2 * i] & BITMASK(memento_size);
+            mementos[num_mementos++] = hash_key_pairs[2 * i] & BITMASK(memento_size);
         }
-        qf_insert_keepsake_merge(new_qf, prev_fp, rejuv_hash_size, mementos, *num_mementos, QF_KEY_IS_HASH);
+        qf_insert_keepsake_merge(new_qf, prev_fp, rejuv_hash_size, mementos, num_mementos, QF_KEY_IS_HASH);
         for (int32_t i = 0; i < num_colliding_keys; i++) {
             const uint64_t hash = hash_key_pairs[2 * i];
             const uint64_t key = hash_key_pairs[2 * i + 1];
@@ -501,7 +490,7 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
         }
     }
     else
-        qf_insert_keepsake_merge(new_qf, hash, hash_len, mementos, *num_mementos, QF_KEY_IS_HASH);
+        qf_insert_keepsake_merge(new_qf, hash, hash_len, mementos, num_mementos, QF_KEY_IS_HASH);
 }
 
 
@@ -518,33 +507,29 @@ int arqf_expand(ARQF *arqf) {
         qf_set_auto_resize(&new_qf, true);
     new_qf.metadata->orig_quotient_bits = qf->metadata->orig_quotient_bits;
 
-	uint64_t current_run = 0;
-	uint64_t current_index = 0;
-	uint64_t last_index = -1;
-
     uint64_t hash, mementos[50 * (1ULL << new_qf.metadata->value_bits) + 50];
     uint32_t hash_len, num_mementos = 0;
 	QFi qfi;
     qf_iterator_from_position(qf, &qfi, 0);
 	qfi_get_hash(&qfi, &hash, &hash_len, mementos + num_mementos);
-    hash = move_one_bit_in_hash(&new_qf, hash);
+    hash = hash_len < new_qf.metadata->quotient_bits ? hash : move_one_bit_in_hash(&new_qf, hash);
     num_mementos++;
     for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi)) {
         uint64_t new_hash, new_memento;
         uint32_t new_hash_len;
         qfi_get_hash(&qfi, &new_hash, &new_hash_len, &new_memento);
-        new_hash = move_one_bit_in_hash(&new_qf, new_hash);
+        new_hash = new_hash_len < new_qf.metadata->quotient_bits ? new_hash : move_one_bit_in_hash(&new_qf, new_hash);
         if (new_hash_len == hash_len && new_hash == hash)
             mementos[num_mementos++] = new_memento;
         else {
-            move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, &num_mementos);
+            move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, num_mementos);
             hash = new_hash;
             hash_len = new_hash_len;
             mementos[0] = new_memento;
             num_mementos = 1;
         }
     }
-    move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, &num_mementos);
+    move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, num_mementos);
 
 	qf_free(qf);
 	memcpy(qf, &new_qf, sizeof(QF));
@@ -557,8 +542,8 @@ int arqf_insert(ARQF *arqf, uint64_t key) {
     const uint64_t hash = arqf_hash(qf, key);
     const uint32_t required_hash_len = qf_insert_memento(qf, hash, QF_KEY_IS_HASH);
     const uint64_t rhm_hash = ((hash >> qf->metadata->value_bits) & BITMASK(required_hash_len))
-                                | (1ULL << required_hash_len);
-    const uint64_t db_conv_hash = get_base_hash(arqf->qf, rhm_hash);
+                                | (qf->metadata->is_expandable ? 1ULL << required_hash_len : 0ULL);
+    const uint64_t db_conv_hash = get_base_hash(qf, rhm_hash);
     db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key, sizeof(key), 1, 0);
     return 1;
 }

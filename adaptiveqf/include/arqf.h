@@ -40,6 +40,9 @@ int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t
 int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags);
 int arqf_adapt_range(ARQF* arqf, uint64_t left, uint64_t right, int flags);
 
+int arqf_expand(ARQF *arqf);
+int arqf_insert(ARQF *arqf, uint64_t key);
+
 #ifdef __cplusplus
 }
 #endif
