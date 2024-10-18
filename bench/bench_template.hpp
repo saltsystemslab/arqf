@@ -525,7 +525,7 @@ void experiment_expandability_disk(
     char table_schema[max_schema_len];
     char connection_config[max_conn_config_len];
     sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
-    uint64_t current_buffer_pool_size_mb = buffer_pool_size_mb;
+    uint64_t current_buffer_pool_size_mb = std::max(buffer_pool_size_mb, 2UL);
     sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
 
     if (std::filesystem::exists(wt_home))
@@ -557,7 +557,7 @@ void experiment_expandability_disk(
 
     for (uint32_t expansion = 0; expansion <= expansion_count; expansion++) {
         error_check(conn->close(conn, NULL)); /* Close all handles. */
-        current_buffer_pool_size_mb = ((buffer_pool_size_mb << (20 - expansion_count + expansion)) - size_f(f)) >> 20;
+        current_buffer_pool_size_mb = std::max(((buffer_pool_size_mb << (20 - expansion_count + expansion)) - size_f(f)) >> 20, 2UL);
         sprintf(connection_config, "statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
         error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
         error_check(conn->open_session(conn, NULL, NULL, &session));
@@ -660,7 +660,7 @@ void experiment_expandability_disk(
             uint64_t right = r;
             bool original_result = orig;
 
-            if (i % adversary_freq == 0) {
+            if (i % adversary_freq == 0 && !adversaries.empty()) {
                 num_adversarial_queries++;
                 left = adversaries[adversary_idx].first;
                 right = adversaries[adversary_idx].second;

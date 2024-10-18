@@ -495,7 +495,6 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
 
 
 int arqf_expand(ARQF *arqf) {
-    perror("EXPANSION JUTSU!!!");
     QF *qf = arqf->qf;
     const uint64_t nslots = 2 * qf->metadata->nslots;
 

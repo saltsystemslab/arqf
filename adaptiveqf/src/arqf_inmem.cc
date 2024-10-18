@@ -494,7 +494,6 @@ int InMemArqf_expand(InMemArqf *arqf) {
 #ifdef DEBUG
     validate_rhm(arqf);
 #endif
-    std::cerr << "EXPANSION JUTSU!!!" << std::endl;
     QF *qf = arqf->qf;
     const uint64_t nslots = 2 * qf->metadata->nslots;
 
