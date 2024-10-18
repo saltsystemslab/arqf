@@ -225,6 +225,11 @@ inline bool adapt_arqf(InMemArqf* arqf, const value_type left, const value_type 
   return (ret == 0);
 }
 
+inline bool should_reconstruct(InMemArqf* f) 
+{
+    return false;
+}
+
 inline size_t size_arqf(InMemArqf* f)
 {
   return qf_get_total_size_in_bytes(f->qf);
@@ -241,7 +246,7 @@ inline void add_metadata(InMemArqf* arqf)
 }
 
 template <
-    typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun,
+    typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename MetadataFun, 
     typename... Args>
 void run_test(
     argparse::ArgumentParser& parser,
@@ -249,6 +254,7 @@ void run_test(
     InsertFun insert_f,
     RangeFun range_f,
     AdaptFun adapt_f,
+    ShouldReconstructFun should_reconstruct_f,
     SizeFun size_f,
     MetadataFun metadata_f)
 {
@@ -271,10 +277,10 @@ void run_test(
         insert_f,
         range_f,
         adapt_f,
+        should_reconstruct_f,
         size_f,
         metadata_f,
         arg,
-        0,
         keys,
         queries,
         queries);
@@ -300,10 +306,10 @@ void run_test(
         insert_f,
         range_f,
         adapt_f,
+        should_reconstruct_f,
         size_f,
         metadata_f,
         arg,
-        0,
         db_home,
         keys,
         queries,
@@ -330,6 +336,7 @@ int main(int argc, char const *argv[])
             pass_ref(insert_arqf),
             pass_ref(query_arqf),
             pass_ref(adapt_arqf),
+            pass_ref(should_reconstruct),
             pass_ref(size_arqf),
             pass_ref(add_metadata));
     print_test();

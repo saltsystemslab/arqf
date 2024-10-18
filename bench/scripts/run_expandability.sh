@@ -34,7 +34,7 @@ done
 
 for adversarial_rate in 1 5 10
 do
-for filter in expandable_adaptive_arqf_inmem expandable_adaptive_arqf_splinterdb 
+for filter in expandable_memento expandable_adaptive_arqf_inmem expandable_adaptive_arqf_splinterdb 
 do
   ${BIN_DIR}/bench/bench_${filter} 19 \
     --keys ${WORKLOAD_DIR}/keys \

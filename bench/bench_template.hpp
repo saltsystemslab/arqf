@@ -47,6 +47,19 @@ static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, Simpl
     optimizer_hack += x;
 }
 
+static inline std::vector<uint64_t> get_dataset_from_db(WT_CURSOR *cursor)
+{
+    error_check(cursor->reset(cursor));
+    std::vector<uint64_t> res;
+    while ((cursor->next(cursor)) == 0) {
+        const char *key;
+        error_check(cursor->get_key(cursor, &key));
+        res.push_back(*reinterpret_cast<const uint64_t *>(key));
+    }
+    std::cerr << "[+] reconstruction set size: " << res.size() << std::endl;
+    return res;
+}
+
 static inline InputKeys<uint64_t> fetch_dataset_from_db(WT_CURSOR *cursor)
 {
     uint8_t key_buf[sizeof(uint64_t) + 1];
@@ -219,16 +232,16 @@ void experiment_adaptivity(
 
 const uint32_t expansion_count = 8;
 
-template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
 void experiment_expandability(
     InitFun init_f, 
     InsertFun insert_f, 
     RangeFun range_f, 
     AdaptFun adapt_f, 
+    ShouldReconstructFun should_reconstruct_f, 
     SizeFun size_f, 
     MetadataFun metadata_f, 
     const double param, 
-    const uint32_t reconstruct_period,
     InputKeys<key_type> &keys, 
     Workload<key_type> &queries, 
     Args... args)
@@ -248,7 +261,7 @@ void experiment_expandability(
         test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, current_dataset_size));
 
         if (expansion > 0) {
-            if (reconstruct_period > 0 && expansion % reconstruct_period == 0) {
+            if (should_reconstruct_f(f)) {
                 current_dataset_size = std::min(current_dataset_size * 2, N);
                 std::cerr << "CANNOT EXPAND, RECONSTRUCTING INSTEAD" << std::endl;
                 f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
@@ -496,16 +509,16 @@ void experiment_adaptivity_disk(
 }
 
 
-template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
 void experiment_expandability_disk(
     InitFun init_f, 
     InsertFun insert_f, 
     RangeFun range_f, 
     AdaptFun adapt_f, 
+    ShouldReconstructFun should_reconstruct_f, 
     SizeFun size_f, 
     MetadataFun metadata_f, 
     const double param, 
-    const uint32_t reconstruct_period,
     std::string wt_home,
     InputKeys<key_type> &keys, 
     Workload<key_type> &queries, 
@@ -571,11 +584,12 @@ void experiment_expandability_disk(
         test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, current_dataset_size));
 
         if (expansion > 0) {
-            if (reconstruct_period > 0 && expansion % reconstruct_period == 0) {
+            if (should_reconstruct_f(f)) {
                 current_dataset_size = std::min(current_dataset_size * 2, N);
                 std::cerr << "CANNOT EXPAND, RECONSTRUCTING INSTEAD" << std::endl;
                 start_timer(expansion_time);
-                f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
+                auto reconstruction_keys = get_dataset_from_db(cursor);
+                f = init_f(reconstruction_keys.begin(), reconstruction_keys.end(), param, args...);
                 measure_timer(expansion_time);
                 test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
                 std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
