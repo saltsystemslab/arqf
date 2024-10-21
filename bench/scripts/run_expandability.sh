@@ -32,26 +32,23 @@ do
   rm ${dir}adaptive_expandable_arqf_inmem${TEST_TYPE}.csv
 done
 
-for adversarial_rate in 1 5 10
+for filter in expandable_memento expandable_adaptive_arqf_splinterdb #expandable_adaptive_arqf_inmem 
 do
-for filter in expandable_memento expandable_adaptive_arqf_inmem expandable_adaptive_arqf_splinterdb 
-do
-  ${BIN_DIR}/bench/bench_${filter} 19 \
+  ${BIN_DIR}/bench/bench_${filter} 9 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/0_qzipfian_trial_0/left ${WORKLOAD_DIR}/0_qzipfian_trial_0/right ${WORKLOAD_DIR}/0_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/0_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate ${adversarial_rate}
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
 
-  ${BIN_DIR}/bench/bench_${filter} 19 \
+  ${BIN_DIR}/bench/bench_${filter} 14 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/5_qzipfian_trial_0/left ${WORKLOAD_DIR}/5_qzipfian_trial_0/right ${WORKLOAD_DIR}/5_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/5_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate ${adversarial_rate}
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
 
   ${BIN_DIR}/bench/bench_${filter} 19 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/10_qzipfian_trial_0/left ${WORKLOAD_DIR}/10_qzipfian_trial_0/right ${WORKLOAD_DIR}/10_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/10_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate ${adversarial_rate}
-done
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
 done
