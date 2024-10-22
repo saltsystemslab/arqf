@@ -42,7 +42,7 @@ function(compile_bench ds)
     add_executable(bench_${ds} filters_benchmark/bench_${ds}.cpp)
 
     # TODO(chesetti): Add wiredtiger as a submodule and update instructions.
-    target_include_directories(bench_${ds} PUBLIC /home/chesetti/local/include)
+    target_include_directories(bench_${ds} PUBLIC ../external/wiredtiger/build/include)
     target_link_libraries(bench_${ds} argparse ${WIREDTIGER_LIB})
 
     if (ds MATCHES "arqf")
@@ -176,5 +176,5 @@ if (ALL_RENCODER AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)
 endif()
 
 add_executable(workload_gen workload_gen.cpp zipf.c)
-target_include_directories(workload_gen PUBLIC /home/chesetti/local/include)
+target_include_directories(workload_gen PUBLIC ../external/wiredtiger/build/include)
 target_link_libraries(workload_gen argparse ${WIREDTIGER_LIB})
