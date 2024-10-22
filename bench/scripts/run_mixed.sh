@@ -38,7 +38,7 @@ fi
 
 for read_ratio in 0 25 75 100 
 do
-for filter in memento arqf adaptive_arqf_inmem adaptive_arqf_splinterdb 
+for filter in memento adaptive_arqf_splinterdb 
 do
   ${BIN_DIR}/bench/bench_${filter} 14 \
     --keys ${WORKLOAD_DIR}/keys \

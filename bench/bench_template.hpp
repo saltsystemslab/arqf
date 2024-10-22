@@ -439,7 +439,8 @@ void experiment_adversarial_workload(
     test_out.add_measure("fpr", ((double)fp / queries.size()));
     test_out.add_measure("false_neg", fn);
     test_out.add_measure("n_keys", keys.size());
-    test_out.add_measure("n_queries", queries.size());
+    test_out.add_measure("n_warmup_queries", num_warmup_queries);
+    test_out.add_measure("n_queries", queries.size() - num_warmup_queries);
     test_out.add_measure("false_positives", fp);
     test_out.add_measure("false_positives_adversarial", fp_adversarial);
     test_out.add_measure("false_positives_query", fp_query_set);
@@ -451,6 +452,7 @@ void experiment_adversarial_workload(
     test_out.add_measure("bytes_read", get_database_stat(session, WT_STAT_CONN_CACHE_BYTES_READ));
     test_out.add_measure("num_read_disk_ios", get_database_stat(session, WT_STAT_CONN_READ_IO));
     test_out.add_measure("true_queries", true_queries);
+    test_out.add_measure("wt_buffer_pool_size_mb", buffer_pool_size_mb);
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
@@ -586,6 +588,7 @@ void experiment_mixed_workload(
     test_out.add_measure("num_read_queries", read_op_idx);
     test_out.add_measure("num_write_queries", write_op_idx - mixed_num_warmup_keys);
     test_out.add_measure("true_queries", true_queries);
+    test_out.add_measure("wt_buffer_pool_size_mb", buffer_pool_size_mb);
     metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
