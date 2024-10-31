@@ -14,7 +14,7 @@ if [[ $1 == "medium" ]]; then
   echo "MEDIUM"
 N_ELEMS=20000000 # 20 Million
 Q_UNIVERSE_SIZE=10000000 # 10 Million
-N_QUERY=5000000 # 10 Million
+N_QUERY=5000000 # 5 Million
 WORKLOAD_PATH=$2/expandability_medium
 fi
 
@@ -22,7 +22,7 @@ if [[ $1 == "large" ]]; then
   echo "LARGE"
 N_ELEMS=200000000 # 200 Million
 Q_UNIVERSE_SIZE=10000000 # 10 Million
-N_QUERY=50000000 # 100 Million
+N_QUERY=50000000 # 50 Million
 WORKLOAD_PATH=$2/expandability
 fi
 

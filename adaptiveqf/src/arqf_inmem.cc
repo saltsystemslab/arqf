@@ -552,3 +552,8 @@ int InMemArqf_insert(InMemArqf *arqf, const uint64_t key) {
     return 1;
 }
 
+int InMemArqf_free(InMemArqf *arqf) {
+    return qf_free(arqf->qf);
+}
+
+

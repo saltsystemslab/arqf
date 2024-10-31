@@ -354,6 +354,7 @@ Workload<uint64_t> generate_synth_queries_exp(const std::string& qdist, InputKey
                                               const double corr_degree, 
                                               const long double stddev, 
                                               const long zipf_batch_size=0, const uint64_t zipf_universe_size = UINT64_MAX) {
+    std::cerr << "FOCK ME LOIFE n_queries=" << n_queries << std::endl;
     std::mt19937 shuffle_gen(seed - 1);
     const uint64_t n_keys = keys.size();
     std::shuffle(keys.begin(), keys.end(), shuffle_gen);
@@ -618,7 +619,6 @@ void generate_synth_datasets_exp(const std::vector<std::string> &kdist, const st
     std::copy(qdist.begin(), qdist.end(), std::ostream_iterator<std::string>(std::cout, ","));
     std::cout << std::endl;
     std::cout << "[+] corr_degree=" << corr_degree << std::endl;
-
 
     for (const auto& k: kdist) {
         std::string root_path = "./" + k + "/";

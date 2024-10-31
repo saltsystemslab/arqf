@@ -145,8 +145,8 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
     //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
     const uint64_t seed = 1380;
     const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-    const double load_factor = 0.94;
-    const uint64_t n_slots = n_items / load_factor + 10 * std::sqrt(n_items);
+    const double load_factor = 0.90;
+    const uint64_t n_slots = n_items / load_factor + 100 * std::sqrt(n_items);
     uint32_t memento_bits = 1;
     while ((1ULL << memento_bits) < max_range_size)
         memento_bits++;
@@ -198,6 +198,16 @@ inline QF *init_memento(const t_itr begin, const t_itr end, const double bpk, Ar
 template <typename value_type>
 inline void insert_memento(QF *f, const value_type key)
 {
+	if (f->metadata->noccupied_slots >= f->metadata->nslots * 0.95 ||
+            f->metadata->noccupied_slots + 1 >= f->metadata->nslots) {
+		if (f->metadata->auto_resize) {
+            t_start_expansion_time = timer::now();
+			qf_resize_malloc(f, f->metadata->nslots * 2);
+            t_end_expansion_time = timer::now();
+            t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
+        }
+	}
+
     char dup_key[key_len];
     memcpy(dup_key, &key, key_len);
     uint64_t memento = 0;
@@ -255,6 +265,11 @@ inline size_t size_memento(QF* f)
   return qf_get_total_size_in_bytes(f);
 }
 
+inline int free_memento(QF* f)
+{
+    return qf_free(f);
+}
+
 inline void add_metadata(QF* f)
 {
   const uint32_t quotient_bits = f->metadata->key_bits - f->metadata->fingerprint_bits;
@@ -266,8 +281,9 @@ inline void add_metadata(QF* f)
 }
 
 template <
-    typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename MetadataFun, 
-    typename... Args>
+    typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun,
+    typename ShouldReconstructFun, typename SizeFun, typename FreeFun,
+    typename MetadataFun, typename... Args>
 void run_test(
     argparse::ArgumentParser& parser,
     InitFun init_f,
@@ -276,6 +292,7 @@ void run_test(
     AdaptFun adapt_f,
     ShouldReconstructFun should_reconstruct_f,
     SizeFun size_f,
+    FreeFun free_f,
     MetadataFun metadata_f)
 {
   auto test_type = parser.get<std::string>("--test-type");
@@ -328,6 +345,7 @@ void run_test(
         adapt_f,
         should_reconstruct_f,
         size_f,
+        free_f,
         metadata_f,
         arg,
         db_home,
@@ -342,7 +360,7 @@ void run_test(
 
 int main(int argc, char const *argv[])
 {
-    auto parser = init_parser("bench-expandability");
+    auto parser = init_parser("bench-expandability-memento");
     try {
         parser.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
@@ -358,6 +376,7 @@ int main(int argc, char const *argv[])
             pass_ref(adapt_memento),
             pass_ref(should_reconstruct),
             pass_ref(size_memento),
+            pass_ref(free_memento),
             pass_ref(add_metadata));
     print_test();
     return 0;

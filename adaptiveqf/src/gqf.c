@@ -1137,6 +1137,7 @@ void validate_filter(QF *qf) {
     qf_iterator_from_position(qf, &qfi, 0);
     for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi))
         assert(qfi.current > 0);
+    assert(qfi_end(&qfi));
 
     assert(get_block(qf, 0)->offset == 0);
     const uint32_t max_offset = (uint32_t) BITMASK(8*sizeof(qf->blocks[0].offset));
@@ -2620,17 +2621,20 @@ static inline uint64_t read_extension_bits(const QF* qf, uint64_t extension_inde
 inline uint64_t read_fingerprint_bits(const QF* qf, uint64_t target_index, uint64_t *num_fingerprint_bits)
 {
     uint64_t res = GET_REMAINDER(qf, target_index);
-    *num_fingerprint_bits = highbit_position(res);
+    *num_fingerprint_bits = qf->metadata->is_expandable ? highbit_position(res) 
+                                                        : qf->metadata->key_remainder_bits;
     if (is_extension(qf, target_index)) {
         const uint64_t extension_value = GET_FIRST_EXTENSION(qf, target_index);
-        const uint32_t bit_count = qf->metadata->is_expandable ? highbit_position(extension_value) : qf->metadata->value_bits;
+        const uint32_t bit_count = qf->metadata->is_expandable ? highbit_position(extension_value) 
+                                                               : qf->metadata->value_bits;
         res |= (extension_value & BITMASK(bit_count)) << qf->metadata->key_remainder_bits;
         target_index++;
         *num_fingerprint_bits = qf->metadata->key_remainder_bits + bit_count;
     }
     while (is_extension(qf, target_index)) {
         const uint64_t slot_value = get_slot(qf, target_index);
-        const uint32_t bit_count = qf->metadata->is_expandable ? highbit_position(slot_value) : qf->metadata->bits_per_slot;
+        const uint32_t bit_count = qf->metadata->is_expandable ? highbit_position(slot_value) 
+                                                               : qf->metadata->bits_per_slot;
         res |= ((slot_value & BITMASK(bit_count)) << (*num_fingerprint_bits));
         target_index++;
         *num_fingerprint_bits += bit_count;
@@ -2677,7 +2681,9 @@ inline int next_matching_fingerprint(
     // You cannot check for is_keepsake_or_quotient runend here.
     // *start_index - 1 will always be a runend. We just need to check if we 
     // have come out of the remainder.
-    if (is_runend(qf, *start_index - 1) || GET_REMAINDER(qf, *start_index) > fp_remainder) {
+    const uint64_t current_remainder = GET_REMAINDER(qf, *start_index) 
+            | (qf->metadata->is_expandable && is_extension(qf, *start_index) ? 1ULL << qf->metadata->key_remainder_bits : 0); 
+    if (is_runend(qf, *start_index - 1) || current_remainder > fp_remainder) {
       *start_index = keepsake_start;
       return -1;
     }
@@ -2685,7 +2691,7 @@ inline int next_matching_fingerprint(
 
   uint64_t cur_qf_extension = 0;
   do {
-    const uint64_t current_remainder = GET_REMAINDER(qf, *start_index) 
+    uint64_t current_remainder = GET_REMAINDER(qf, *start_index) 
             | (qf->metadata->is_expandable && is_extension(qf, *start_index) ? 1ULL << qf->metadata->key_remainder_bits : 0); 
     const uint32_t hb_pos = highbit_position(current_remainder);
     const uint64_t cmp_mask = BITMASK(qf->metadata->is_expandable ? hb_pos : 64);
@@ -2709,7 +2715,9 @@ inline int next_matching_fingerprint(
     // You cannot check for is_keepsake_or_quotient runend here.
     // *start_index - 1 will always be a runend. We just need to check if we 
     // have come out of the remainder.
-    if (is_runend(qf, *start_index - 1) || GET_REMAINDER(qf, *start_index) > fp_remainder) {
+    current_remainder = GET_REMAINDER(qf, *start_index) 
+            | (qf->metadata->is_expandable && is_extension(qf, *start_index) ? 1ULL << qf->metadata->key_remainder_bits : 0); 
+    if (is_runend(qf, *start_index - 1) || current_remainder > fp_remainder) {
       *start_index = keepsake_start;
       return -1;
     }
@@ -2766,7 +2774,8 @@ int find_colliding_fingerprint(
   // TODO: break if cur_qf_extension is greater than fp_ext_bits.
 
     assert(*num_ext_bits > 0); // If num_ext_bits == 0 remainder should have matched.
-    if (min_ext_bits > *num_ext_bits) min_ext_bits = *num_ext_bits;
+    const uint32_t matching_bit_count = lowbit_position(fp_ext_bits ^ cur_qf_extension);
+    if (min_ext_bits < matching_bit_count + 1) min_ext_bits = matching_bit_count + 1;
 
     uint64_t current_block = ((*start_index) / QF_SLOTS_PER_BLOCK);
     uint64_t next_runend_offset = bitselectv(get_block(qf, current_block)->runends[0], *start_index, 0);
@@ -2779,7 +2788,9 @@ int find_colliding_fingerprint(
     // You cannot check for is_keepsake_or_quotient runend here.
     // *start_index - 1 will always be a runend. We just need to check if we 
     // have come out of the remainder.
-    if (is_runend(qf, *start_index - 1) || GET_REMAINDER(qf, *start_index) != fp_remainder) {
+    const uint64_t current_remainder = GET_REMAINDER(qf, *start_index) | 
+        (qf->metadata->is_expandable && is_extension(qf, *start_index) ? 1ULL << remainder_bits : 0ULL);
+    if (is_runend(qf, *start_index - 1) || current_remainder != fp_remainder) {
       *keepsake_runend_index = (*start_index - 1);
       *start_index = keepsake_start;
       *num_ext_bits = qf->metadata->value_bits;     // If fp_hash was going to be inserted, you need at least these many extension bits.
@@ -3473,6 +3484,7 @@ int qf_insert_keepsake(QF *qf, uint64_t hash, uint32_t num_hash_bits,
             payload |= ((current_fp_bits & BITMASK(chunk_size))
                             | (qf->metadata->is_expandable ? 1ULL << chunk_size : 0ULL))
                         << payload_offset;
+            current_fp_bits >>= chunk_size;
             payload_offset += qf->metadata->bits_per_slot;
             new_hash_bits += chunk_size;
         }
@@ -3559,7 +3571,7 @@ int64_t qf_resize_malloc(QF *qf, uint64_t nslots) {
 	uint64_t current_index = 0;
 	uint64_t last_index = -1;
 
-    uint64_t hash, mementos[(1ULL << qf->metadata->value_bits) + 50];
+    uint64_t hash, mementos[500 * (1ULL << qf->metadata->value_bits) + 50];
     uint32_t hash_len, num_mementos = 0;
 	QFi qfi;
     qf_iterator_from_position(qf, &qfi, 0);
@@ -3618,7 +3630,7 @@ uint64_t qf_resize(QF* qf, uint64_t nslots, void* buffer, uint64_t buffer_len)
 
 	QFi qfi;
     qf_iterator_from_position(qf, &qfi, 0);
-	uint64_t hash, mementos[(1ULL << qf->metadata->value_bits) + 50];
+	uint64_t hash, mementos[500 * (1ULL << qf->metadata->value_bits) + 50];
     uint32_t hash_len, num_mementos = 0;
 	qfi_get(&qfi, &hash, &hash_len, mementos + num_mementos);
     num_mementos++;

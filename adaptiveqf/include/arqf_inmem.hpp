@@ -16,5 +16,6 @@ int InMemArqf_adapt(InMemArqf* arqf, uint64_t fp_key, int flags);
 int InMemArqf_adapt_range(InMemArqf* arqf, uint64_t left, uint64_t right, int flags);
 int InMemArqf_expand(InMemArqf *arqf);
 int InMemArqf_insert(InMemArqf *arqf, uint64_t key);
+int InMemArqf_free(InMemArqf *arqf);
 
 #endif

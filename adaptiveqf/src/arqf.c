@@ -496,27 +496,28 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
 
 int arqf_expand(ARQF *arqf) {
     QF *qf = arqf->qf;
-    const uint64_t nslots = 2 * qf->metadata->nslots;
 
 	QF new_qf;
-	if (!qf_malloc(&new_qf, nslots, qf->metadata->key_bits + 1, qf->metadata->value_bits,
+	if (!qf_malloc(&new_qf, 2 * qf->metadata->nslots, qf->metadata->key_bits + 1, qf->metadata->value_bits,
                    qf->metadata->hash_mode, qf->metadata->seed, qf->metadata->is_expandable))
         return 0;
 	if (qf->runtimedata->auto_resize)
         qf_set_auto_resize(&new_qf, true);
     new_qf.metadata->orig_quotient_bits = qf->metadata->orig_quotient_bits;
 
-    uint64_t hash, mementos[50 * (1ULL << new_qf.metadata->value_bits) + 50];
+    uint64_t hash, mementos[500 * (1ULL << new_qf.metadata->value_bits) + 50];
     uint32_t hash_len, num_mementos = 0;
 	QFi qfi;
     qf_iterator_from_position(qf, &qfi, 0);
 	qfi_get_hash(&qfi, &hash, &hash_len, mementos + num_mementos);
+    assert(hash_len >= new_qf.metadata->quotient_bits - 1);
     hash = hash_len < new_qf.metadata->quotient_bits ? hash : move_one_bit_in_hash(&new_qf, hash);
     num_mementos++;
     for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi)) {
         uint64_t new_hash, new_memento;
         uint32_t new_hash_len;
         qfi_get_hash(&qfi, &new_hash, &new_hash_len, &new_memento);
+        assert(new_hash_len >= new_qf.metadata->quotient_bits - 1);
         new_hash = new_hash_len < new_qf.metadata->quotient_bits ? new_hash : move_one_bit_in_hash(&new_qf, new_hash);
         if (new_hash_len == hash_len && new_hash == hash)
             mementos[num_mementos++] = new_memento;
@@ -545,5 +546,9 @@ int arqf_insert(ARQF *arqf, uint64_t key) {
     const uint64_t db_conv_hash = get_base_hash(qf, rhm_hash);
     db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key, sizeof(key), 1, 0);
     return 1;
+}
+
+int arqf_free(ARQF *arqf) {
+    return qf_free(arqf->qf);
 }
 

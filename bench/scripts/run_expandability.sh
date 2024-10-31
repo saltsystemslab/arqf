@@ -40,13 +40,13 @@ do
     --csv ${WORKLOAD_DIR}/0_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
 
-  ${BIN_DIR}/bench/bench_${filter} 14 \
+  ${BIN_DIR}/bench/bench_${filter} 13 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/5_qzipfian_trial_0/left ${WORKLOAD_DIR}/5_qzipfian_trial_0/right ${WORKLOAD_DIR}/5_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/5_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
 
-  ${BIN_DIR}/bench/bench_${filter} 19 \
+  ${BIN_DIR}/bench/bench_${filter} 18 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/10_qzipfian_trial_0/left ${WORKLOAD_DIR}/10_qzipfian_trial_0/right ${WORKLOAD_DIR}/10_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/10_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \

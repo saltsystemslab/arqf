@@ -123,7 +123,7 @@ inline ARQF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Arg
     const uint64_t seed = 1380;
     const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
     const double load_factor = 0.90;
-    const uint64_t n_slots = n_items / load_factor + std::sqrt(n_items);
+    const uint64_t n_slots = n_items / load_factor + 100 * std::sqrt(n_items);
     uint32_t memento_bits = 1;
     while ((1ULL << memento_bits) < max_range_size)
         memento_bits++;
@@ -176,7 +176,10 @@ inline void insert_arqf(ARQF* arqf, const value_type key)
   QF* qf = arqf->qf;
   if (qf->metadata->noccupied_slots >= qf->metadata->nslots * 0.95 ||
           qf->metadata->noccupied_slots + 1 >= qf->metadata->nslots) {
+      t_start_expansion_time = timer::now();
       arqf_expand(arqf);
+      t_end_expansion_time = timer::now();
+      t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
   }
   arqf_insert(arqf, key);
 }
@@ -219,6 +222,11 @@ inline size_t size_arqf(ARQF* f)
   return qf_get_total_size_in_bytes(f->qf);
 }
 
+inline int free_arqf(ARQF* f)
+{
+    return arqf_free(f);
+}
+
 inline void add_metadata(ARQF *qf) 
 {
   test_out.add_measure("q_bits", qf->qf->metadata->quotient_bits);
@@ -229,8 +237,9 @@ inline void add_metadata(ARQF *qf)
 }
 
 template <
-    typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename MetadataFun, 
-    typename... Args>
+    typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun,
+    typename ShouldReconstructFun, typename SizeFun, typename FreeFun,
+    typename MetadataFun, typename... Args>
 void run_test(
     argparse::ArgumentParser& parser,
     InitFun init_f,
@@ -239,6 +248,7 @@ void run_test(
     AdaptFun adapt_f,
     ShouldReconstructFun should_reconstruct_f,
     SizeFun size_f,
+    FreeFun free_f,
     MetadataFun metadata_f)
 {
   auto test_type = parser.get<std::string>("--test-type");
@@ -291,6 +301,7 @@ void run_test(
         adapt_f,
         should_reconstruct_f,
         size_f,
+        free_f,
         metadata_f,
         arg,
         db_home,
@@ -321,6 +332,7 @@ int main(int argc, char const *argv[])
             pass_ref(adapt_arqf),
             pass_ref(should_reconstruct),
             pass_ref(size_arqf),
+            pass_ref(free_arqf),
             pass_ref(add_metadata));
     print_test();
     return 0;

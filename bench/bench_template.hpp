@@ -113,6 +113,10 @@ inline bool query_inmem_db(std::set<uint64_t> *s, const value_type left, const v
 #define pass_fun(f) ([](auto... args){ return f(args...); })
 #define pass_ref(fun) ([](auto& f, auto... args){ return fun(f, args...); })
 
+auto t_start_expansion_time = timer::now();
+auto t_end_expansion_time = timer::now();
+auto t_duration_expansion_time = 0ULL;
+
 #define start_timer(t) \
     auto t_start_##t = timer::now(); \
 
@@ -509,7 +513,7 @@ void experiment_adaptivity_disk(
 }
 
 
-template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename FreeFun, typename MetadataFun, typename key_type, typename... Args>
 void experiment_expandability_disk(
     InitFun init_f, 
     InsertFun insert_f, 
@@ -517,6 +521,7 @@ void experiment_expandability_disk(
     AdaptFun adapt_f, 
     ShouldReconstructFun should_reconstruct_f, 
     SizeFun size_f, 
+    FreeFun free_f, 
     MetadataFun metadata_f, 
     const double param, 
     std::string wt_home,
@@ -584,19 +589,20 @@ void experiment_expandability_disk(
         test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, current_dataset_size));
 
         if (expansion > 0) {
+            t_duration_expansion_time = 0;
             if (should_reconstruct_f(f)) {
-                current_dataset_size = std::min(current_dataset_size * 2, N);
                 std::cerr << "CANNOT EXPAND, RECONSTRUCTING INSTEAD" << std::endl;
-                start_timer(expansion_time);
+                t_start_expansion_time = timer::now();
                 auto reconstruction_keys = get_dataset_from_db(cursor);
+                free_f(f);
                 f = init_f(reconstruction_keys.begin(), reconstruction_keys.end(), param, args...);
-                measure_timer(expansion_time);
-                test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
-                std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
+                t_end_expansion_time = timer::now();
+                t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
+                std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << " (expansion=" << expansion << ")" << std::endl;
             }
             std::cerr << "START EXPANSION PROCESS" << std::endl;
             std::cerr << "current_dataset_size=" << current_dataset_size << std::endl;
-            start_timer(expansion_time);
+            start_timer(insertion_time);
             error_check(cursor->reset(cursor));
             for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++) {
                 SimpleBigInt big_int_k(key_len), big_int_v(val_len);
@@ -605,10 +611,12 @@ void experiment_expandability_disk(
                 insert_kv(cursor, reinterpret_cast<char *>(big_int_k.num), reinterpret_cast<char *>(big_int_v.num));
                 insert_f(f, keys[current_dataset_size + i]);
             }
-            measure_timer(expansion_time);
+            measure_timer(insertion_time);
+            test_out.add_measure(std::string("insertion_time_") + expansion_str, t_duration_insertion_time);
             test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
             current_dataset_size = std::min(current_dataset_size * 2, N);
-            std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
+            std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << " (expansion=" << expansion << ")" << std::endl;
+            std::cerr << "BELYATT insertion_time=" << t_duration_insertion_time << " expansion_time=" << t_duration_expansion_time << std::endl;
         }
 
         auto fp = 0, fn = 0, fa = 0;
@@ -727,6 +735,7 @@ void experiment_expandability_disk(
         test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
         test_out.add_measure(std::string("adversarial_rate_") + expansion_str, adversarial_rate);
         test_out.add_measure(std::string("num_adversarial_queries_") + expansion_str, num_adversarial_queries);
+        std::cerr << "WELP num_db_fetches=" << num_db_fetches << std::endl;
         metadata_f(f);
     }
 
