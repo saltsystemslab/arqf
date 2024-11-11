@@ -141,7 +141,7 @@ inline InMemArqf* init_arqf(const t_itr begin, const t_itr end, const double bpk
     //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
     const uint64_t seed = 1380;
     const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-    const double load_factor = 0.90;
+    const double load_factor = 0.95;
     const uint64_t n_slots = n_items / load_factor + 10 * std::sqrt(n_items);
     uint32_t memento_bits = 1;
     while ((1ULL << memento_bits) < max_range_size)
@@ -196,6 +196,7 @@ inline void insert_arqf(InMemArqf* arqf, const value_type key)
       InMemArqf_expand(arqf);
       t_end_expansion_time = timer::now();
       t_duration_expansion_time = std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
+      just_expanded = true;
   }
   InMemArqf_insert(arqf, key);
 }

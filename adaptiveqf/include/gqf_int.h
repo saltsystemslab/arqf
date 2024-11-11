@@ -101,6 +101,9 @@ extern "C" {
 		uint64_t nelts;
 		uint64_t ndistinct_elts;
 		uint64_t noccupied_slots;
+		uint64_t splinter_expand_read_clocks;
+		uint64_t splinter_expand_delete_clocks;
+		uint64_t splinter_expand_insert_clocks;
         bool is_expandable;
 	} quotient_filter_metadata;
 

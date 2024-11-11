@@ -438,6 +438,7 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
     const uint32_t quotient_size = new_qf->metadata->quotient_bits;
     const uint32_t remainder_size = new_qf->metadata->key_remainder_bits;
     const uint32_t memento_size = new_qf->metadata->value_bits;
+    clock_t start, end;
 
     if (hash_len < quotient_size) {     // Rejuvenate using reverse map
         const uint32_t rejuv_hash_size = quotient_size + remainder_size;
@@ -445,13 +446,17 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
 
         char buffer[MAX_KEY_SIZE];
         uint64_t db_conv_hash = get_base_hash(arqf->qf, capped_hash);
+        start = clock();
         slice db_query = padded_slice(&db_conv_hash, MAX_KEY_SIZE, sizeof(db_conv_hash), buffer, 0);
         splinterdb_lookup(arqf->rhm, db_query, arqf->db_result);
         if (!splinterdb_lookup_found(arqf->db_result))
             abort(); // Improperly maintained RHM.
         slice result_val;
         splinterdb_lookup_result_value(arqf->db_result, &result_val);
+        end = clock();
+        new_qf->metadata->splinter_expand_read_clocks += (end - start);
 
+        start = clock();
         uint64_t num_colliding_keys = result_val.length / MAX_VAL_SIZE;
         uint64_t colliding_keys[num_colliding_keys];
         for (uint64_t i = 0; i < result_val.length; i += MAX_VAL_SIZE) {
@@ -460,6 +465,8 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
         }
         db_query = padded_slice(&db_conv_hash, MAX_KEY_SIZE, sizeof(db_conv_hash), buffer, 0);
         splinterdb_delete(arqf->rhm, db_query); // Delete the old keys. They will be reinserted even if they map to same fingerprint.
+        end = clock();
+        new_qf->metadata->splinter_expand_delete_clocks += (end - start);
 
         uint64_t hash_key_pairs[2 * num_colliding_keys];
         for (int32_t i = 0; i < num_colliding_keys; i++) {
@@ -481,6 +488,7 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
             mementos[num_mementos++] = hash_key_pairs[2 * i] & BITMASK(memento_size);
         }
         qf_insert_keepsake_merge(new_qf, prev_fp, rejuv_hash_size, mementos, num_mementos, QF_KEY_IS_HASH);
+        start = clock();
         for (int32_t i = 0; i < num_colliding_keys; i++) {
             const uint64_t hash = hash_key_pairs[2 * i];
             const uint64_t key = hash_key_pairs[2 * i + 1];
@@ -488,6 +496,8 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
             db_conv_hash = get_base_hash(new_qf, rhm_hash);
             db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key, sizeof(key), 1, 0);
         }
+        end = clock();
+        new_qf->metadata->splinter_expand_insert_clocks += (end - start);
     }
     else
         qf_insert_keepsake_merge(new_qf, hash, hash_len, mementos, num_mementos, QF_KEY_IS_HASH);
@@ -504,6 +514,9 @@ int arqf_expand(ARQF *arqf) {
 	if (qf->runtimedata->auto_resize)
         qf_set_auto_resize(&new_qf, true);
     new_qf.metadata->orig_quotient_bits = qf->metadata->orig_quotient_bits;
+    new_qf.metadata->splinter_expand_read_clocks = 0;
+    new_qf.metadata->splinter_expand_delete_clocks = 0;
+    new_qf.metadata->splinter_expand_insert_clocks = 0;
 
     uint64_t hash, mementos[500 * (1ULL << new_qf.metadata->value_bits) + 50];
     uint32_t hash_len, num_mementos = 0;

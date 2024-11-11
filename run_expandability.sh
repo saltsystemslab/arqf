@@ -1,8 +1,8 @@
 #!/bin/bash
 
-./bench/scripts/gen_expandability_workload.sh small workloads
-./bench/scripts/run_expandability.sh small workloads disk
-./bench/scripts/gen_expandability_workload.sh medium workloads
-./bench/scripts/run_expandability.sh medium workloads disk
-./bench/scripts/gen_expandability_workload.sh large workloads
-./bench/scripts/run_expandability.sh large workloads disk
+time ./bench/scripts/gen_expandability_workload.sh small workloads
+time ./bench/scripts/run_expandability.sh small workloads disk
+time ./bench/scripts/gen_expandability_workload.sh medium workloads
+time ./bench/scripts/run_expandability.sh medium workloads disk
+#time ./bench/scripts/gen_expandability_workload.sh large workloads
+#time ./bench/scripts/run_expandability.sh large workloads disk

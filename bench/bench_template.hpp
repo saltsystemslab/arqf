@@ -31,6 +31,9 @@ uint64_t key_len, val_len;
 uint64_t default_buffer_pool_size_mb = 64;
 uint64_t buffer_pool_size_mb = 0;
 float adversarial_rate = 0.1;
+bool just_expanded = false;
+bool requires_full_db_scan = false;
+uint64_t expansion = 0;
 
 static inline void fetch_range_from_db(WT_CURSOR *cursor, SimpleBigInt &l, SimpleBigInt &r)
 {
@@ -116,6 +119,10 @@ inline bool query_inmem_db(std::set<uint64_t> *s, const value_type left, const v
 auto t_start_expansion_time = timer::now();
 auto t_end_expansion_time = timer::now();
 auto t_duration_expansion_time = 0ULL;
+
+auto t_start_wt_scan_time = timer::now();
+auto t_end_wt_scan_time = timer::now();
+auto t_duration_wt_scan_time = 0ULL;
 
 #define start_timer(t) \
     auto t_start_##t = timer::now(); \
@@ -493,7 +500,6 @@ void experiment_adaptivity_disk(
     }
     stop_timer(query_time);
 
-
     auto size = size_f(f);
     test_out.add_measure("size", size);
     test_out.add_measure("bpk", TO_BPK(size, keys.size()));
@@ -542,8 +548,8 @@ void experiment_expandability_disk(
     WT_CURSOR *cursor;
     char table_schema[max_schema_len];
     char connection_config[max_conn_config_len];
-    sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
     uint64_t current_buffer_pool_size_mb = std::max(buffer_pool_size_mb, 2UL);
+    sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
     sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
 
     if (std::filesystem::exists(wt_home))
@@ -573,52 +579,65 @@ void experiment_expandability_disk(
     auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
 
-    for (uint32_t expansion = 0; expansion <= expansion_count; expansion++) {
-        error_check(conn->close(conn, NULL)); /* Close all handles. */
-        current_buffer_pool_size_mb = std::max(((buffer_pool_size_mb << (20 - expansion_count + expansion)) - size_f(f)) >> 20, 2UL);
-        sprintf(connection_config, "statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
-        error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
-        error_check(conn->open_session(conn, NULL, NULL, &session));
-        error_check(session->create(session, "table:access", table_schema));
-        error_check(session->open_cursor(session, "table:access", NULL, NULL, &cursor));
-        std::cerr << "[+] reinit cache size to " << current_buffer_pool_size_mb << "MB" << std::endl;
+    for (uint32_t i = current_dataset_size; i < N; i++) {
+        SimpleBigInt big_int_k(key_len), big_int_v(val_len);
+        big_int_k = keys[current_dataset_size + i];
+        big_int_v.randomize();
+        insert_kv(cursor, reinterpret_cast<char *>(big_int_k.num), reinterpret_cast<char *>(big_int_v.num));
+        insert_f(f, keys[current_dataset_size + i]);
 
-        std::string expansion_str = std::to_string(expansion);
-        auto size = size_f(f);
-        test_out.add_measure(std::string("size_") + expansion_str, size);
-        test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, current_dataset_size));
-
-        if (expansion > 0) {
-            t_duration_expansion_time = 0;
-            if (should_reconstruct_f(f)) {
-                std::cerr << "CANNOT EXPAND, RECONSTRUCTING INSTEAD" << std::endl;
-                t_start_expansion_time = timer::now();
-                auto reconstruction_keys = get_dataset_from_db(cursor);
-                free_f(f);
-                f = init_f(reconstruction_keys.begin(), reconstruction_keys.end(), param, args...);
-                t_end_expansion_time = timer::now();
-                t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
-                std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << " (expansion=" << expansion << ")" << std::endl;
-            }
-            std::cerr << "START EXPANSION PROCESS" << std::endl;
-            std::cerr << "current_dataset_size=" << current_dataset_size << std::endl;
-            start_timer(insertion_time);
-            error_check(cursor->reset(cursor));
-            for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++) {
-                SimpleBigInt big_int_k(key_len), big_int_v(val_len);
-                big_int_k = keys[current_dataset_size + i];
-                big_int_v.randomize();
-                insert_kv(cursor, reinterpret_cast<char *>(big_int_k.num), reinterpret_cast<char *>(big_int_v.num));
-                insert_f(f, keys[current_dataset_size + i]);
-            }
-            measure_timer(insertion_time);
-            test_out.add_measure(std::string("insertion_time_") + expansion_str, t_duration_insertion_time);
-            test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
-            current_dataset_size = std::min(current_dataset_size * 2, N);
-            std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << " (expansion=" << expansion << ")" << std::endl;
-            std::cerr << "BELYATT insertion_time=" << t_duration_insertion_time << " expansion_time=" << t_duration_expansion_time << std::endl;
+        if (just_expanded && !should_reconstruct_f(f)) {
+            requires_full_db_scan = false;
+            // Memento Resized, but doesn't need to scan the DB yet.
+        }
+        if (should_reconstruct_f(f)) {
+            requires_full_db_scan = true;
+            std::cerr << "cannot expand, reconstructing instead" << std::endl;
+            t_start_expansion_time = timer::now();
+            t_start_wt_scan_time = timer::now();
+            auto reconstruction_keys = get_dataset_from_db(cursor);
+            t_end_wt_scan_time = timer::now();
+            t_duration_wt_scan_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_wt_scan_time - t_start_wt_scan_time).count();
+            free_f(f);
+            f = init_f(reconstruction_keys.begin(), reconstruction_keys.end(), param, args...);
+            t_end_expansion_time = timer::now();
+            t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
+            std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << i << " vs. N=" << N << " (expansion=" << expansion << ")" << std::endl;
+            just_expanded = true;
         }
 
+        if (just_expanded) {
+            just_expanded = false;
+            expansion++;
+            std::cerr << "==== EXPANSION " << expansion <<" ======== "<<std::endl;
+            std::string expansion_str = std::to_string(expansion);
+            auto size = size_f(f);
+            test_out.add_measure(std::string("expansion_trigger_key_") + expansion_str, i);
+            test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
+            test_out.add_measure(std::string("wt_buffer_pool_size_mb_round_") + expansion_str, current_buffer_pool_size_mb);
+            test_out.add_measure(std::string("filter_size_") + expansion_str, size);
+            test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, i));
+            test_out.add_measure(std::string("did_full_db_scan_") + expansion_str, std::to_string(requires_full_db_scan));
+            test_out.add_measure(std::string("wt_scan_time_") + expansion_str, t_duration_wt_scan_time);
+            metadata_f(f);
+            test_out.print();
+
+            error_check(conn->close(conn, NULL)); /* Close all handles. */
+            current_buffer_pool_size_mb = std::max(((buffer_pool_size_mb << (20 - expansion_count + expansion)) - size_f(f)) >> 20, 2UL);
+            sprintf(connection_config, "statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
+            error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
+            error_check(conn->open_session(conn, NULL, NULL, &session));
+            error_check(session->create(session, "table:access", table_schema));
+            error_check(session->open_cursor(session, "table:access", NULL, NULL, &cursor));
+            error_check(cursor->reset(cursor));
+            t_duration_expansion_time = 0;
+            t_duration_wt_scan_time = 0;
+        }
+        requires_full_db_scan = false;
+    }
+
+// Disabling queries.
+#if 0
         auto fp = 0, fn = 0, fa = 0;
         uint64_t num_db_fetches = 0;
         uint64_t num_adapts = 0;
@@ -723,22 +742,22 @@ void experiment_expandability_disk(
             test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
         }
         measure_timer(query_time);
+// Disabling queries.
+#endif
 
-        test_out.add_measure(std::string("query_time_") + expansion_str, t_duration_query_time);
-        test_out.add_measure(std::string("false_positives_") + expansion_str, fp);
-        test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
-        test_out.add_measure(std::string("false_neg_") + expansion_str, fn);
-        test_out.add_measure(std::string("n_keys_") + expansion_str, current_dataset_size);
-        test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
-        test_out.add_measure(std::string("num_db_fetch_") + expansion_str, num_db_fetches);
-        test_out.add_measure(std::string("db_fetch_duration_ns_") + expansion_str, fetch_from_db_duration_ns);
-        test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
-        test_out.add_measure(std::string("adversarial_rate_") + expansion_str, adversarial_rate);
-        test_out.add_measure(std::string("num_adversarial_queries_") + expansion_str, num_adversarial_queries);
-        std::cerr << "WELP num_db_fetches=" << num_db_fetches << std::endl;
-        metadata_f(f);
-    }
-
+        // test_out.add_measure(std::string("query_time_") + expansion_str, t_duration_query_time);
+        // test_out.add_measure(std::string("false_positives_") + expansion_str, fp);
+        // test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
+        // test_out.add_measure(std::string("false_neg_") + expansion_str, fn);
+        // test_out.add_measure(std::string("n_keys_") + expansion_str, current_dataset_size);
+        // test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
+        // test_out.add_measure(std::string("num_db_fetch_") + expansion_str, num_db_fetches);
+        // test_out.add_measure(std::string("db_fetch_duration_ns_") + expansion_str, fetch_from_db_duration_ns);
+        // test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
+        // test_out.add_measure(std::string("adversarial_rate_") + expansion_str, adversarial_rate);
+        // test_out.add_measure(std::string("num_adversarial_queries_") + expansion_str, num_adversarial_queries);
+        // std::cerr << "WELP num_db_fetches=" << num_db_fetches << std::endl;
+    metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
     std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
     error_check(conn->close(conn, NULL)); /* Close all handles. */

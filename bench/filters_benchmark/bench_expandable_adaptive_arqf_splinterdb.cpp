@@ -122,7 +122,7 @@ inline ARQF *init_arqf(const t_itr begin, const t_itr end, const double bpk, Arg
     //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
     const uint64_t seed = 1380;
     const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
-    const double load_factor = 0.90;
+    const double load_factor = 0.95;
     const uint64_t n_slots = n_items / load_factor + 100 * std::sqrt(n_items);
     uint32_t memento_bits = 1;
     while ((1ULL << memento_bits) < max_range_size)
@@ -180,6 +180,7 @@ inline void insert_arqf(ARQF* arqf, const value_type key)
       arqf_expand(arqf);
       t_end_expansion_time = timer::now();
       t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
+      just_expanded = true;
   }
   arqf_insert(arqf, key);
 }
@@ -234,6 +235,12 @@ inline void add_metadata(ARQF *qf)
   test_out.add_measure("m_bits", qf->qf->metadata->value_bits);
   test_out.add_measure("n_slots", qf->qf->metadata->xnslots);
   test_out.add_measure("noccupied_slots", qf->qf->metadata->noccupied_slots);
+
+  std::string expansion_str = std::to_string(expansion);
+  test_out.add_measure("splinter_expand_read_seconds_" + expansion_str, qf->qf->metadata->splinter_expand_read_clocks);
+  test_out.add_measure("splinter_expand_delete_seconds_" + expansion_str, qf->qf->metadata->splinter_expand_delete_clocks);
+  test_out.add_measure("splinter_expand_insert_seconds_" + expansion_str, qf->qf->metadata->splinter_expand_insert_clocks);
+  test_out.add_measure("clocks_per_sec" , CLOCKS_PER_SEC); 
 }
 
 template <

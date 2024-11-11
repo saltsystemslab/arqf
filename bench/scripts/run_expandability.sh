@@ -32,23 +32,29 @@ do
   rm ${dir}adaptive_expandable_arqf_inmem${TEST_TYPE}.csv
 done
 
-for filter in expandable_memento expandable_adaptive_arqf_splinterdb #expandable_adaptive_arqf_inmem 
+for filter in expandable_memento expandable_adaptive_arqf_splinterdb 
 do
-  ${BIN_DIR}/bench/bench_${filter} 9 \
+  ${BIN_DIR}/bench/bench_${filter} 18 \
     --keys ${WORKLOAD_DIR}/keys \
-    --workload ${WORKLOAD_DIR}/0_qzipfian_trial_0/left ${WORKLOAD_DIR}/0_qzipfian_trial_0/right ${WORKLOAD_DIR}/0_qzipfian_trial_0/result \
-    --csv ${WORKLOAD_DIR}/0_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
+    --workload ${WORKLOAD_DIR}/10_qzipfian_trial_0/left ${WORKLOAD_DIR}/10_qzipfian_trial_0/right ${WORKLOAD_DIR}/10_qzipfian_trial_0/result \
+    --csv ${WORKLOAD_DIR}/10_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
+done
 
+for filter in expandable_memento expandable_adaptive_arqf_splinterdb 
+do
   ${BIN_DIR}/bench/bench_${filter} 13 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/5_qzipfian_trial_0/left ${WORKLOAD_DIR}/5_qzipfian_trial_0/right ${WORKLOAD_DIR}/5_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/5_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
+done
 
-  ${BIN_DIR}/bench/bench_${filter} 18 \
+for filter in expandable_memento expandable_adaptive_arqf_splinterdb 
+do
+  ${BIN_DIR}/bench/bench_${filter} 9 \
     --keys ${WORKLOAD_DIR}/keys \
-    --workload ${WORKLOAD_DIR}/10_qzipfian_trial_0/left ${WORKLOAD_DIR}/10_qzipfian_trial_0/right ${WORKLOAD_DIR}/10_qzipfian_trial_0/result \
-    --csv ${WORKLOAD_DIR}/10_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
+    --workload ${WORKLOAD_DIR}/0_qzipfian_trial_0/left ${WORKLOAD_DIR}/0_qzipfian_trial_0/right ${WORKLOAD_DIR}/0_qzipfian_trial_0/result \
+    --csv ${WORKLOAD_DIR}/0_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
 done
