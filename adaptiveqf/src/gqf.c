@@ -793,6 +793,7 @@ static inline uint32_t find_next_empty_slot_runs_of_size_n(QF *qf, uint64_t from
         indices[ind++] = find_first_empty_slot(qf, from);
         indices[ind] = get_number_of_consecutive_empty_slots(qf, indices[ind - 1], n);
 #ifdef DEBUG
+        /*
         {
             uint64_t occupied_cnt = 0, runend_cnt = 0;
             for (int64_t i = 0; i < indices[ind - 1]; i++) {
@@ -805,6 +806,7 @@ static inline uint32_t find_next_empty_slot_runs_of_size_n(QF *qf, uint64_t from
                 runend_cnt += is_runend(qf, i);
             }
         }
+        */
 #endif /* DEBUG */
         from = indices[ind - 1] + indices[ind];
         n -= indices[ind];
@@ -3108,6 +3110,139 @@ int _overwrite_keepsake(QF* qf, uint64_t fingerprint, uint8_t num_fingerprint_bi
   return 0;
 }
 
+static inline int _merge_keepsakes(QF* qf, uint64_t hash_quotient,
+                                   uint32_t num_new_mementos, uint64_t new_mementos[],
+                                   uint64_t runstart_index)
+{
+    // Read list of Mementos from keepsake box
+    uint64_t old_mementos[100ULL << qf->metadata->value_bits];
+    uint32_t num_old_mementos = 0;
+    uint32_t slot_index = runstart_index;
+    while (is_extension(qf, slot_index))
+        slot_index++;
+    const uint32_t keepsake_start_index = slot_index;
+    uint64_t buf;
+    uint32_t buf_full_bits = 0;
+    if (slot_index == runstart_index) { 
+        const uint32_t ignored = (qf->metadata->key_remainder_bits + qf->metadata->is_expandable);
+        buf = get_slot(qf, slot_index++) >> ignored;
+        buf_full_bits = qf->metadata->bits_per_slot - ignored;
+    }
+    while (true) {
+        if (buf_full_bits < qf->metadata->value_bits) {
+            if (is_keepsake_or_quotient_runend(qf, slot_index - 1))
+                break;
+            buf |= get_slot(qf, slot_index++) << buf_full_bits;
+            buf_full_bits += qf->metadata->bits_per_slot;
+        }
+        old_mementos[num_old_mementos] = buf & BITMASK(qf->metadata->value_bits);
+        if (num_old_mementos > 0 && old_mementos[num_old_mementos] < old_mementos[num_old_mementos - 1])
+            break;
+        num_old_mementos++;
+        buf >>= qf->metadata->value_bits;
+        buf_full_bits -= qf->metadata->value_bits;
+    }
+    
+    const uint32_t num_mementos = num_old_mementos + num_new_mementos;
+
+    // Make room for the new mementos
+    const uint32_t fingerprint_bits_in_first_slot = (keepsake_start_index == runstart_index ? qf->metadata->key_remainder_bits + qf->metadata->is_expandable
+                                                                                            : 0);
+    const uint32_t old_memento_bits = num_old_mementos * qf->metadata->value_bits + fingerprint_bits_in_first_slot;
+    const uint32_t total_memento_bits = num_mementos * qf->metadata->value_bits + fingerprint_bits_in_first_slot;
+    const uint32_t old_memento_slots = (old_memento_bits + qf->metadata->bits_per_slot - 1) / qf->metadata->bits_per_slot;
+    const uint32_t total_memento_slots = (total_memento_bits + qf->metadata->bits_per_slot - 1) / qf->metadata->bits_per_slot;
+    const uint32_t new_slot_count = total_memento_slots - old_memento_slots;
+    qf->metadata->noccupied_slots -= old_memento_slots;
+
+    if (new_slot_count > 0) {
+        // Find empty slots and shift everything to fit the new mementos
+        uint64_t empty_runs[1024];
+        uint64_t empty_runs_ind = find_next_empty_slot_runs_of_size_n(qf, runstart_index,
+                                                                      new_slot_count, empty_runs);
+        if (empty_runs[empty_runs_ind - 2] + empty_runs[empty_runs_ind - 1] - 1
+                >= qf->metadata->xnslots) {     // Check that the new data fits
+            return QF_NO_SPACE;
+        }
+
+        uint64_t shift_distance = 0;
+        for (int i = empty_runs_ind - 2; i >= 2; i -= 2) {
+            shift_distance += empty_runs[i + 1];
+            shift_slots(qf, empty_runs[i - 2] + empty_runs[i - 1], empty_runs[i] - 1, shift_distance);
+            shift_runends(qf, empty_runs[i - 2] + empty_runs[i - 1], empty_runs[i] - 1, shift_distance);
+        }
+
+        // Update offsets
+        uint64_t npreceding_empties = 0;
+        uint32_t empty_iter = 0;
+        uint32_t last_block_to_update_offset = (empty_runs[empty_runs_ind - 2] + 
+                                                empty_runs[empty_runs_ind - 1] - 1) 
+                                                    / QF_SLOTS_PER_BLOCK;
+        for (uint64_t i = hash_quotient / QF_SLOTS_PER_BLOCK + 1; i <= last_block_to_update_offset; i++) {
+            while (npreceding_empties < new_slot_count) {
+                uint64_t r = i * QF_SLOTS_PER_BLOCK;
+                uint64_t l = r - QF_SLOTS_PER_BLOCK;
+                uint64_t empty_run_start = empty_runs[empty_iter];
+                uint64_t empty_run_end = empty_runs[empty_iter] + empty_runs[empty_iter + 1];
+                if (r <= empty_run_start)
+                    break;
+                if (l < empty_run_start)
+                    l = empty_run_start;
+                if (r > empty_run_end) {
+                    r = empty_run_end;
+                    npreceding_empties += r - l;
+                    empty_iter += 2;
+                }
+                else {
+                    npreceding_empties += r - l;
+                    break;
+                }
+            }
+
+            if (get_block(qf, i)->offset + new_slot_count - npreceding_empties 
+                                    < BITMASK(8 * sizeof(qf->blocks[0].offset)))
+                get_block(qf, i)->offset += new_slot_count - npreceding_empties;
+            else
+                get_block(qf, i)->offset = (uint8_t) BITMASK(8 * sizeof(qf->blocks[0].offset));
+        }
+        const uint64_t shift_start = keepsake_start_index + (runstart_index == keepsake_start_index);
+        if (shift_start < empty_runs[0]) {
+            shift_slots(qf, shift_start, empty_runs[0] - 1, new_slot_count);
+            shift_runends(qf, shift_start, empty_runs[0] - 1, new_slot_count);
+        }
+    }
+
+    // Write the merged keepsake box
+    uint64_t payload, payload_offset = 0;
+    if (keepsake_start_index == runstart_index) {
+        payload = get_slot(qf, runstart_index) & BITMASK(qf->metadata->key_remainder_bits + qf->metadata->is_expandable);
+        payload_offset = qf->metadata->key_remainder_bits + qf->metadata->is_expandable;
+    }
+    assert(payload_offset < 64);
+    uint64_t insert_index = keepsake_start_index;
+    uint32_t old_ind = 0, new_ind = 0;
+    for (uint32_t i = 0; i < num_mementos; i++) {
+        // Merge the memento lists while inserting
+        uint64_t current_memento;
+        if (old_ind < num_old_mementos && new_ind < num_new_mementos) {
+            const bool cond = old_mementos[old_ind] < new_mementos[new_ind];
+            current_memento = cond ? old_mementos[old_ind] : new_mementos[new_ind];
+            old_ind += cond;
+            new_ind += !cond;
+        }
+        else if (old_ind < num_old_mementos)
+            current_memento = old_mementos[old_ind++];
+        else 
+            current_memento = new_mementos[new_ind++];
+        _keepsake_add_memento(qf, current_memento, &insert_index, &payload, &payload_offset);
+    }
+    _keepsake_flush_mementos(qf, &insert_index, &payload, &payload_offset);
+
+#ifdef DEBUG
+    validate_filter(qf);
+#endif /* DEBUG */
+}
+
 int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
   uint64_t hash = key;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
@@ -3533,15 +3668,11 @@ int qf_insert_keepsake_merge(QF *qf, const uint64_t hash, const uint32_t num_has
         int ret;
         for (ret = next_matching_fingerprint(qf, padded_hash, &target_index); 
                 ret != -1;
-                ret= next_matching_fingerprint(qf, padded_hash, &target_index)) {
+                ret = next_matching_fingerprint(qf, padded_hash, &target_index)) {
             uint64_t num_fingerprint_bits;
             const uint64_t slot_fingerprint = read_fingerprint_bits(qf, target_index, &num_fingerprint_bits);
             if (num_fingerprint_bits + quotient_bits == num_hash_bits && slot_fingerprint == (hash >> quotient_bits)) {
-                for (int32_t i = 0; i < num_mementos; i++) {
-                    // Keepsake exists. num_ext_bits, runend_index will be set to keepsake
-                    uint64_t limit_index = keepsake_runend_index;
-                    _overwrite_keepsake(qf, hash, num_hash_bits, mementos[i], target_index, &limit_index, &keepsake_runend_index);
-                }
+                _merge_keepsakes(qf, hash_quotient, num_mementos, mementos, target_index);
 #ifdef DEBUG
                 validate_filter(qf);
 #endif /* DEBUG */

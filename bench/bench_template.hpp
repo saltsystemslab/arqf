@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <argparse/argparse.hpp>
@@ -129,7 +130,7 @@ auto t_duration_wt_scan_time = 0ULL;
 
 #define stop_timer(t) \
     auto t_end_##t = timer::now(); \
-    test_out.add_measure(#t, std::chrono::duration_cast<std::chrono::milliseconds>(t_end_##t - t_start_##t).count());
+    test_out.add_measure(#t, std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_##t - t_start_##t).count());
 
 #define measure_timer(t) \
     auto t_end_##t = timer::now(); \
@@ -151,7 +152,7 @@ void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double p
 {
     auto f = init_f(keys.begin(), keys.end(), param, args...);
 
-    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ns, starting queries" << std::endl;
     auto fp = 0, fn = 0;
     start_timer(query_time);
     for (auto q : queries)
@@ -196,7 +197,7 @@ void experiment_adaptivity(
 {
     auto f = init_f(keys.begin(), keys.end(), param, args...);
 
-    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ns, starting queries" << std::endl;
     auto fp = 0, fn = 0, fa = 0;
     std::map<uint64_t, uint64_t> fp_count;
     start_timer(query_time);
@@ -548,7 +549,7 @@ void experiment_expandability_disk(
     WT_CURSOR *cursor;
     char table_schema[max_schema_len];
     char connection_config[max_conn_config_len];
-    uint64_t current_buffer_pool_size_mb = std::max(buffer_pool_size_mb, 2UL);
+    uint64_t current_buffer_pool_size_mb = std::max(((buffer_pool_size_mb << (20 - expansion_count + expansion))) >> 20, 2UL);
     sprintf(table_schema, "key_format=%lds,value_format=%lds", key_len, val_len);
     sprintf(connection_config, "create,statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
 
@@ -603,7 +604,7 @@ void experiment_expandability_disk(
             t_end_expansion_time = timer::now();
             t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
             std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << i << " vs. N=" << N << " (expansion=" << expansion << ")" << std::endl;
-            just_expanded = true;
+            just_expanded = false;
         }
 
         if (just_expanded) {
@@ -624,16 +625,15 @@ void experiment_expandability_disk(
 
             error_check(conn->close(conn, NULL)); /* Close all handles. */
             current_buffer_pool_size_mb = std::max(((buffer_pool_size_mb << (20 - expansion_count + expansion)) - size_f(f)) >> 20, 2UL);
+            std::cout << "WELP first_part=" << (buffer_pool_size_mb << (20 - expansion_count + expansion)) << " size_f=" << size_f(f) << " vs. current_buffer_pool_size_mb=" << current_buffer_pool_size_mb << std::endl;
             sprintf(connection_config, "statistics=(all),direct_io=[data],cache_size=%ldMB", current_buffer_pool_size_mb);
             error_check(wiredtiger_open(wt_home.c_str(), NULL, connection_config, &conn));
             error_check(conn->open_session(conn, NULL, NULL, &session));
-            error_check(session->create(session, "table:access", table_schema));
             error_check(session->open_cursor(session, "table:access", NULL, NULL, &cursor));
             error_check(cursor->reset(cursor));
             t_duration_expansion_time = 0;
             t_duration_wt_scan_time = 0;
         }
-        requires_full_db_scan = false;
     }
 
 // Disabling queries.
