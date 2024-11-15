@@ -1,3 +1,4 @@
+#include <byteswap.h>
 #include "arqf.h"
 #include "gqf.h"
 #include "include/splinter_util.h"
@@ -51,7 +52,7 @@ int arqf_bulk_load(ARQF* arqf, uint64_t* sorted_hashes, uint64_t* keys, uint64_t
     }
     uint64_t fingerprint = ((hash >> memento_bits) & BITMASK(quotient_bits + remainder_bits))
                     | (arqf->qf->metadata->is_expandable ? 1ULL << (quotient_bits + remainder_bits) : 0);
-    fingerprint = get_base_hash(arqf->qf, fingerprint);
+    fingerprint = bswap_64(get_base_hash(arqf->qf, fingerprint));
     db_insert(arqf->rhm, &fingerprint, sizeof(fingerprint), &key, sizeof(key), 1, 0);
   }
   return 0;
@@ -126,7 +127,7 @@ static inline int adapt_keepsake(
   uint8_t min_required_fingerprint_size = 0;
   // TODO(Chesetti): Erase old fingerprint
   char buffer[MAX_KEY_SIZE];
-  uint64_t db_conv_hash = get_base_hash(arqf->qf, keepsake_fingerprint);
+  uint64_t db_conv_hash = bswap_64(get_base_hash(arqf->qf, keepsake_fingerprint));
   slice db_query = padded_slice(&db_conv_hash, MAX_KEY_SIZE, sizeof(db_conv_hash), buffer, 0);
   splinterdb_delete(arqf->rhm, db_query); // Delete the old keys. They will be reinserted even if they map to same fingerprint.
   
@@ -155,7 +156,7 @@ static inline int adapt_keepsake(
       uint64_t collision_prefix = (collision_hash) >> memento_size;
       printf("Not enough bits to break collision\n");
 #endif
-      db_conv_hash = get_base_hash(arqf->qf, keepsake_fingerprint);
+      db_conv_hash = bswap_64(get_base_hash(arqf->qf, keepsake_fingerprint));
       db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key_in_keepsake, sizeof(key_in_keepsake), 1, 0);
     }
     return -1; // Failed to adapt;
@@ -181,7 +182,7 @@ static inline int adapt_keepsake(
         &last_overwritten_index, 
         &current_keepsake_end
       );
-    db_conv_hash = get_base_hash(arqf->qf, new_fingerprint_bits);
+    db_conv_hash = bswap_64(get_base_hash(arqf->qf, new_fingerprint_bits));
     db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key_in_keepsake, sizeof(key_in_keepsake), 1, 0);
   }
 
@@ -241,7 +242,7 @@ static inline int maybe_adapt_keepsake_expandable(ARQF *arqf, uint64_t fp_key, u
         colliding_fingerprint = (colliding_fingerprint << quotient_size) | bucket_index;
 
         char buffer[MAX_KEY_SIZE];
-        db_conv_hash = get_base_hash(arqf->qf, colliding_fingerprint);
+        db_conv_hash = bswap_64(get_base_hash(arqf->qf, colliding_fingerprint));
         slice db_query = padded_slice(&db_conv_hash, MAX_KEY_SIZE, sizeof(db_conv_hash), buffer, 0);
         splinterdb_lookup(arqf->rhm, db_query, arqf->db_result);
         if (!splinterdb_lookup_found(arqf->db_result))
@@ -272,7 +273,7 @@ static inline int maybe_adapt_keepsake_expandable(ARQF *arqf, uint64_t fp_key, u
         keepsake_fingerprint = ((keepsake_fingerprint | (1ULL << matching_fp_size)) << quotient_size)
                                 | bucket_index;
         char buffer[MAX_KEY_SIZE];
-        uint64_t db_conv_hash = get_base_hash(arqf->qf, keepsake_fingerprint);
+        uint64_t db_conv_hash = bswap_64(get_base_hash(arqf->qf, keepsake_fingerprint));
         slice db_query = padded_slice(&db_conv_hash, MAX_KEY_SIZE, sizeof(db_conv_hash), buffer, 0);
         splinterdb_delete(arqf->rhm, db_query); // Delete the old keys. They will be reinserted even if they map to same fingerprint.
 
@@ -318,7 +319,7 @@ static inline int maybe_adapt_keepsake_expandable(ARQF *arqf, uint64_t fp_key, u
         const uint64_t hash = hash_key_pairs[2 * i];
         const uint64_t key = hash_key_pairs[2 * i + 1];
         const uint64_t rhm_hash = ((hash >> memento_size) & BITMASK(min_new_fp_size)) | (1ULL << min_new_fp_size);
-        db_conv_hash = get_base_hash(arqf->qf, rhm_hash);
+        db_conv_hash = bswap_64(get_base_hash(arqf->qf, rhm_hash));
         db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key, sizeof(key), 1, 0);
     }
 #if DEBUG
@@ -361,7 +362,8 @@ static inline int maybe_adapt_keepsake(ARQF *arqf, uint64_t fp_key, uint64_t fp_
   }
 
   char buffer[MAX_KEY_SIZE];
-  slice db_query = padded_slice(&colliding_fingerprint, MAX_KEY_SIZE, sizeof(colliding_fingerprint), buffer, 0);
+  uint64_t bswapped_colliding_fingerprint = bswap_64(colliding_fingerprint);
+  slice db_query = padded_slice(&bswapped_colliding_fingerprint, MAX_KEY_SIZE, sizeof(bswapped_colliding_fingerprint), buffer, 0);
   splinterdb_lookup(arqf->rhm, db_query, arqf->db_result);
   if (!splinterdb_lookup_found(arqf->db_result))
     abort(); // Improperly maintained RHM.
@@ -445,7 +447,7 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
         const uint64_t capped_hash = hash | (new_qf->metadata->is_expandable ? 1ULL << hash_len : 0ULL);
 
         char buffer[MAX_KEY_SIZE];
-        uint64_t db_conv_hash = get_base_hash(arqf->qf, capped_hash);
+        uint64_t db_conv_hash = bswap_64(get_base_hash(arqf->qf, capped_hash));
         start = clock();
         slice db_query = padded_slice(&db_conv_hash, MAX_KEY_SIZE, sizeof(db_conv_hash), buffer, 0);
         splinterdb_lookup(arqf->rhm, db_query, arqf->db_result);
@@ -493,7 +495,7 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
             const uint64_t hash = hash_key_pairs[2 * i];
             const uint64_t key = hash_key_pairs[2 * i + 1];
             const uint64_t rhm_hash = ((hash >> memento_size) & BITMASK(rejuv_hash_size)) | (1ULL << rejuv_hash_size);
-            db_conv_hash = get_base_hash(new_qf, rhm_hash);
+            db_conv_hash = bswap_64(get_base_hash(new_qf, rhm_hash));
             db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key, sizeof(key), 1, 0);
         }
         end = clock();
@@ -520,6 +522,8 @@ int arqf_expand(ARQF *arqf) {
 
     uint64_t hash, mementos[500 * (1ULL << new_qf.metadata->value_bits) + 50];
     uint32_t hash_len, num_mementos = 0;
+    uint64_t void_hash = 0, void_mementos[500 * (1ULL << new_qf.metadata->value_bits) + 50];
+    uint32_t void_num_mementos = 0;
 	QFi qfi;
     qf_iterator_from_position(qf, &qfi, 0);
 	qfi_get_hash(&qfi, &hash, &hash_len, mementos + num_mementos);
@@ -531,18 +535,36 @@ int arqf_expand(ARQF *arqf) {
         uint32_t new_hash_len;
         qfi_get_hash(&qfi, &new_hash, &new_hash_len, &new_memento);
         assert(new_hash_len >= new_qf.metadata->quotient_bits - 1);
-        new_hash = new_hash_len < new_qf.metadata->quotient_bits ? new_hash : move_one_bit_in_hash(&new_qf, new_hash);
-        if (new_hash_len == hash_len && new_hash == hash)
-            mementos[num_mementos++] = new_memento;
+
+        if (void_num_mementos > 0 && new_hash > void_hash) {
+            move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, void_hash, new_qf.metadata->quotient_bits - 1,
+                                               void_mementos, void_num_mementos);
+            void_num_mementos = 0;
+        }
+
+        if (new_hash_len > new_qf.metadata->quotient_bits - 1) {
+            new_hash = move_one_bit_in_hash(&new_qf, new_hash);
+            if (new_hash_len == hash_len && new_hash == hash)
+                mementos[num_mementos++] = new_memento;
+            else {
+                qf_insert_keepsake(&new_qf, hash, hash_len, mementos, num_mementos, QF_KEY_IS_HASH);
+                hash = new_hash;
+                hash_len = new_hash_len;
+                mementos[0] = new_memento;
+                num_mementos = 1;
+            }
+        }
         else {
-            move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, num_mementos);
-            hash = new_hash;
-            hash_len = new_hash_len;
-            mementos[0] = new_memento;
-            num_mementos = 1;
+            void_hash = new_hash;
+            void_mementos[void_num_mementos++] = new_memento;
         }
     }
-    move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, hash, hash_len, mementos, num_mementos);
+    qf_insert_keepsake(&new_qf, hash, hash_len, mementos, num_mementos, QF_KEY_IS_HASH);
+    if (void_num_mementos > 0) {
+        move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, void_hash, new_qf.metadata->quotient_bits - 1,
+                                           void_mementos, void_num_mementos);
+        void_num_mementos = 0;
+    }
 
 	qf_free(qf);
 	memcpy(qf, &new_qf, sizeof(QF));
@@ -556,7 +578,7 @@ int arqf_insert(ARQF *arqf, uint64_t key) {
     const uint32_t required_hash_len = qf_insert_memento(qf, hash, QF_KEY_IS_HASH);
     const uint64_t rhm_hash = ((hash >> qf->metadata->value_bits) & BITMASK(required_hash_len))
                                 | (qf->metadata->is_expandable ? 1ULL << required_hash_len : 0ULL);
-    const uint64_t db_conv_hash = get_base_hash(qf, rhm_hash);
+    const uint64_t db_conv_hash = bswap_64(get_base_hash(qf, rhm_hash));
     db_insert(arqf->rhm, &db_conv_hash, sizeof(db_conv_hash), &key, sizeof(key), 1, 0);
     return 1;
 }

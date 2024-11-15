@@ -568,24 +568,23 @@ void experiment_expandability_disk(
     const uint64_t N = keys.size();
     const uint64_t n_queries = queries.size() / (expansion_count + 1);
     std::cout << "[+] n_queries=" << n_queries << std::endl;
-    uint64_t current_dataset_size = N >> expansion_count;
     error_check(cursor->reset(cursor));
-    for (uint32_t i = 0; i < current_dataset_size; i++) {
+    for (uint32_t i = 0; i < N >> expansion_count; i++) {
         SimpleBigInt big_int_k(key_len), big_int_v(val_len);
         big_int_k = keys[i];
         big_int_v.randomize();
         insert_kv(cursor, reinterpret_cast<char *>(big_int_k.num), reinterpret_cast<char *>(big_int_v.num));
     }
 
-    auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
+    auto f = init_f(keys.begin(), keys.begin() + (N >> expansion_count), param, args...);
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
 
-    for (uint32_t i = current_dataset_size; i < N; i++) {
+    for (uint32_t i = N >> expansion_count; i < N; i++) {
         SimpleBigInt big_int_k(key_len), big_int_v(val_len);
-        big_int_k = keys[current_dataset_size + i];
+        big_int_k = keys[i];
         big_int_v.randomize();
         insert_kv(cursor, reinterpret_cast<char *>(big_int_k.num), reinterpret_cast<char *>(big_int_v.num));
-        insert_f(f, keys[current_dataset_size + i]);
+        insert_f(f, keys[i]);
 
         if (just_expanded && !should_reconstruct_f(f)) {
             requires_full_db_scan = false;
