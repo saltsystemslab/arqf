@@ -34,27 +34,9 @@ done
 
 for filter in expandable_memento expandable_adaptive_arqf_splinterdb 
 do
-  ${BIN_DIR}/bench/bench_${filter} 18 \
-    --keys ${WORKLOAD_DIR}/keys \
-    --workload ${WORKLOAD_DIR}/10_qzipfian_trial_0/left ${WORKLOAD_DIR}/10_qzipfian_trial_0/right ${WORKLOAD_DIR}/10_qzipfian_trial_0/result \
-    --csv ${WORKLOAD_DIR}/10_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
-done
-
-for filter in expandable_memento expandable_adaptive_arqf_splinterdb 
-do
   ${BIN_DIR}/bench/bench_${filter} 13 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/5_qzipfian_trial_0/left ${WORKLOAD_DIR}/5_qzipfian_trial_0/right ${WORKLOAD_DIR}/5_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/5_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
-done
-
-for filter in expandable_memento expandable_adaptive_arqf_splinterdb 
-do
-  ${BIN_DIR}/bench/bench_${filter} 9 \
-    --keys ${WORKLOAD_DIR}/keys \
-    --workload ${WORKLOAD_DIR}/0_qzipfian_trial_0/left ${WORKLOAD_DIR}/0_qzipfian_trial_0/right ${WORKLOAD_DIR}/0_qzipfian_trial_0/result \
-    --csv ${WORKLOAD_DIR}/0_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1 > ${filter}.txt
 done
