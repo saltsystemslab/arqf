@@ -25,7 +25,7 @@ list(APPEND x86Targets "surf" "rosetta" "proteus" "rencoder")
 
 set(CMAKE_CXX_STANDARD 17)
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -g -fno-omit-frame-pointer")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -fno-omit-frame-pointer")
 else()
     set(USE_MULTI_THREADED OFF)
 endif ()
