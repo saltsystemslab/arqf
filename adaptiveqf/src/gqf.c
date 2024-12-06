@@ -3915,7 +3915,7 @@ int qf_range_query(const QF *qf, const uint64_t l, const uint64_t r,
   if (is_occupied(qf, r_quotient)) {
     uint64_t current_index =
         r_quotient == 0 ? 0 : run_end(qf, r_quotient - 1) + 1;
-    if (current_index < l_quotient) current_index = r_quotient;
+    if (current_index < r_quotient) current_index = r_quotient;
     uint64_t current_remainder = GET_REMAINDER(qf, current_index);
     int ext_box_found = 0;
     while (current_remainder < r_remainder) {
