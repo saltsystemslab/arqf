@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 BIN_DIR=./release
 BPK=16
 TEST_TYPE=fpr
@@ -33,16 +34,16 @@ do
 for bpk in 24 
 do
   mkdir -p ${RESULT_DIR}/${dir}
-  perf record -g -o memento.report memento.record ${BIN_DIR}/bench/bench_memento $bpk \
+  sudo perf record -g -o ./${RESULT_DIR}/${dir}memento.report ${BIN_DIR}/bench/bench_memento $bpk \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${dir}left ${dir}right ${dir}result \
     --csv ${RESULT_DIR}/${dir}memento_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
 
-  perf record -g -o arqf.record ${BIN_DIR}/bench/bench_arqf $bpk \
+  sudo perf record -g -o ./${RESULT_DIR}/${dir}arqf.report ${BIN_DIR}/bench/bench_arqf $bpk \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${dir}left ${dir}right ${dir}result \
-    --csv ${RESULT_DIR}/${dir}adaptive_arqf_splinterdb_${TEST_TYPE}.csv \
+    --csv ${RESULT_DIR}/${dir}arqf_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
 done
 done
