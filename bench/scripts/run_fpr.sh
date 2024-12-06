@@ -23,8 +23,7 @@ RESULT_DIR=$3
 for dir in ${WORKLOAD_DIR}/*/
 do
   rm ${dir}memento_${TEST_TYPE}.csv
-  rm ${dir}arqf_${TEST_TYPE}.csv
-  rm ${dir}adaptive_arqf_inmem_${TEST_TYPE}.csv
+  rm ${dir}rqf_${TEST_TYPE}.csv
   rm ${dir}adaptive_arqf_splinterdb_${TEST_TYPE}.csv
 done
 
@@ -43,6 +42,12 @@ do
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${dir}left ${dir}right ${dir}result \
     --csv ${RESULT_DIR}/${dir}adaptive_arqf_splinterdb_${TEST_TYPE}.csv \
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
+
+  ${BIN_DIR}/bench/bench_arqf $bpk \
+    --keys ${WORKLOAD_DIR}/keys \
+    --workload ${dir}left ${dir}right ${dir}result \
+    --csv ${RESULT_DIR}/${dir}rqf_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
 done
 done

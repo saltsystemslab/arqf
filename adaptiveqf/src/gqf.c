@@ -3700,39 +3700,144 @@ int _overwrite_keepsake(QF* qf,
 }
 
 int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
-  qf->metadata->n_filter_queries++;
-  uint64_t hash = key;
+  const uint64_t quotient_bits = qf->metadata->quotient_bits;
+  const uint64_t remainder_bits = qf->metadata->key_remainder_bits;
+  const uint64_t memento_bits = qf->metadata->value_bits;
+  const uint64_t n_slots = qf->metadata->nslots;
+  const uint64_t seed = qf->metadata->seed;
+
+  const uint64_t quotient_mask = (1ULL << quotient_bits) - 1;
+  const uint64_t memento_mask = (1ULL << memento_bits) - 1;
+  const uint64_t hash_mask = (1ULL << (quotient_bits + remainder_bits)) - 1;
+
+  const uint64_t l_memento = key & BITMASK(qf->metadata->value_bits);
+  const uint64_t l_key = key >> qf->metadata->value_bits;
+
+  uint64_t l_hash;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    hash = arqf_hash(qf, key);
+    l_hash = MurmurHash64A(((void *)&key), sizeof(key), qf->metadata->seed);
   } else {
-    hash = (key >> qf->metadata->value_bits);
+    l_hash = key;
   }
-  const uint64_t hash_memento = key & BITMASK(qf->metadata->value_bits);
-  const uint64_t hash_quotient = (hash >> (qf->metadata->key_remainder_bits)) & BITMASK(qf->metadata->quotient_bits);
 
-  if (!is_occupied(qf, hash_quotient)) {
+  const uint64_t l_quotient =
+      fast_reduce((l_hash & quotient_mask) << (32 - quotient_bits), n_slots);
+  const uint64_t l_fingerprint = (l_hash >> quotient_bits);
+  const uint64_t l_remainder = (l_fingerprint & BITMASK(remainder_bits));
+
+  qf->metadata->n_filter_queries++;
+  if (!is_occupied(qf, l_quotient)) {
     return 0;
   }
-  uint64_t current_index; 
-  int ret = query_colliding_fingerprint(qf, hash, &current_index);
-  if (ret == -1) {
-    return 0; // not found.
-  }
 
-  uint64_t memento_offset = qf->metadata->key_remainder_bits;
-  if (is_extension(qf, current_index)) {
-    memento_offset = 0;
-    current_index++;
-    while (is_extension(qf, current_index)) {
-      current_index++;
+    uint64_t current_index =
+        l_quotient == 0 ? 0 : run_end(qf, l_quotient - 1) + 1;
+    if (current_index < l_quotient) current_index = l_quotient;
+    int ext_box_found = 0;
+    uint64_t current_remainder = GET_REMAINDER(qf, current_index);
+    while (current_remainder < l_remainder) {
+      if (is_keepsake_or_quotient_runend(qf, current_index)) {
+        current_index++;
+      } else {
+        // Use bitselectv to find next runend.
+        uint64_t current_block = (current_index / QF_SLOTS_PER_BLOCK);
+        uint64_t next_runend_offset = bitselectv(
+            get_block(qf, current_block)->runends[0], current_index, 0);
+        while (next_runend_offset == 64) {
+          current_block++;
+          next_runend_offset =
+              bitselectv(get_block(qf, current_block)->runends[0], 0, 0);
+        }
+        current_index =
+            current_block * QF_SLOTS_PER_BLOCK + next_runend_offset + 1;
+      }
+      if (is_runend(qf, current_index - 1)) {
+        break;  // No more runends to check.
+      }
+      current_remainder = GET_REMAINDER(qf, current_index);
     }
-  }
 
-  uint64_t nearest_memento = lower_bound_memento(qf, hash_memento, current_index, memento_offset); 
-  if (nearest_memento == hash_memento)  
-    return 1;
-  else  
-    return 0;
+    if (current_remainder != l_remainder) {
+      return 0;
+    }
+
+    if (current_remainder == l_remainder) {
+      // Now read each extension keepsake box.
+      uint64_t l_ext_bits = (l_fingerprint >> remainder_bits);
+      uint64_t cur_qf_extension = 0;
+      do {
+        uint64_t num_ext_bits;
+        cur_qf_extension = read_extension_bits(qf, current_index, &num_ext_bits);
+        if (cur_qf_extension == (l_ext_bits & BITMASK(num_ext_bits))) {
+          ext_box_found = 1;
+          break; // Found the current extension box.
+        }
+        // TODO: break if cur_qf_extension is greater than fp_ext_bits.
+        uint64_t current_block = ((current_index) / QF_SLOTS_PER_BLOCK);
+        uint64_t next_runend_offset =
+            bitselectv(get_block(qf, current_block)->runends[0], current_index, 0);
+        while (next_runend_offset == 64) {
+          current_block++;
+          next_runend_offset =
+              bitselectv(get_block(qf, current_block)->runends[0], 0, 0);
+        }
+        current_index= current_block * QF_SLOTS_PER_BLOCK + next_runend_offset;
+        current_index++;
+        // You cannot check for is_keepsake_or_quotient runend here.
+        // *start_index - 1 will always be a runend. We just need to check if we
+        // have come out of the remainder.
+        if (is_runend(qf, current_index - 1) ||
+            GET_REMAINDER(qf, current_index) != l_remainder) {
+          return 0;
+        }
+      } while (true);
+    }   
+    
+      uint64_t memento_offset = qf->metadata->key_remainder_bits;
+      if (is_extension(qf, current_index)) {
+        memento_offset = 0;
+        current_index++;
+        while (is_extension(qf, current_index)) {
+          current_index++;
+        }
+      }
+      uint64_t current_slot = get_slot(qf, current_index);
+      current_slot = current_slot >> memento_offset;
+      uint64_t current_memento = current_slot & BITMASK(qf->metadata->value_bits);;
+      current_slot >>= qf->metadata->value_bits;
+      uint64_t next_memento;
+
+      while (current_memento < l_memento) {
+        memento_offset += qf->metadata->value_bits;
+        if (memento_offset >= qf->metadata->bits_per_slot) {
+          if (is_keepsake_or_quotient_runend(qf, current_index)) 
+            return 0;
+          memento_offset -= qf->metadata->bits_per_slot;
+          current_index++;
+          current_slot = get_slot(qf, current_index);
+          current_slot >>= memento_offset;
+        }
+
+        if (memento_offset + qf->metadata->value_bits > qf->metadata->bits_per_slot) {
+          if (is_keepsake_or_quotient_runend(qf, current_index)) {
+            return 0;
+          }
+          const uint64_t bits_from_cur_slot = qf->metadata->bits_per_slot - memento_offset;
+          const uint64_t bits_from_next_slot = qf->metadata->value_bits - bits_from_cur_slot;
+          next_memento = current_slot | ((get_slot(qf, current_index+1) & BITMASK(bits_from_next_slot)) << bits_from_cur_slot);
+        } else {
+          next_memento = (current_slot) & BITMASK(qf->metadata->value_bits);
+          current_slot >>= qf->metadata->value_bits;
+        }
+        if (next_memento < current_memento) {
+          return 0;
+        }
+        if (next_memento == current_memento) {
+          return 1;
+        }
+        current_memento = next_memento;
+      }
+      return 0;
 }
 
 int qf_range_query(const QF *qf, const uint64_t l, const uint64_t r,
