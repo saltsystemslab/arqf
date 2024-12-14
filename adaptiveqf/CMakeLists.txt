@@ -32,7 +32,7 @@ target_link_libraries(arqflib PUBLIC pthread ssl crypto m ${SPLINTERDB_FULL_PATH
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" )
   target_compile_options(arqflib PUBLIC -Og -m64 -DDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 else()
-  target_compile_options(arqflib PUBLIC -Ofast -m64 -march=native -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+  target_compile_options(arqflib PUBLIC -Ofast  -msse4.2 -D__SSE4_2_ -march=native -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 endif()
 
 # I don't think the -rpath option is working...
