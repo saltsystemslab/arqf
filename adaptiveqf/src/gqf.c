@@ -3713,11 +3713,13 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
   const uint64_t l_memento = key & BITMASK(qf->metadata->value_bits);
   const uint64_t l_key = key >> qf->metadata->value_bits;
 
+
+
   uint64_t l_hash;
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
-    l_hash = MurmurHash64A(((void *)&key), sizeof(key), qf->metadata->seed);
+    l_hash = MurmurHash64A(((void *)&l_key), sizeof(l_key), qf->metadata->seed);
   } else {
-    l_hash = key;
+    l_hash = l_key;
   }
 
   const uint64_t l_quotient =
@@ -3729,6 +3731,11 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
   if (!is_occupied(qf, l_quotient)) {
     return 0;
   }
+
+#if 0
+   uint64_t tmp_index;
+   uint64_t ret = query_colliding_fingerprint(qf, arqf_hash(qf, key), &tmp_index);
+#endif
 
     uint64_t current_index =
         l_quotient == 0 ? 0 : run_end(qf, l_quotient - 1) + 1;
@@ -3756,6 +3763,11 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
       }
       current_remainder = GET_REMAINDER(qf, current_index);
     }
+
+  	// uint64_t colliding_remainder = lower_bound_remainder(qf, l_remainder,&tmp_index);
+	// if (colliding_remainder != current_remainder) {
+		// abort();
+	// }
 
     if (current_remainder != l_remainder) {
       return 0;
@@ -3793,17 +3805,29 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
       } while (true);
     }   
     
-      uint64_t memento_offset = qf->metadata->key_remainder_bits;
-      if (is_extension(qf, current_index)) {
-        memento_offset = 0;
+    uint64_t memento_offset = qf->metadata->key_remainder_bits;
+    if (is_extension(qf, current_index)) {
+    	memento_offset = 0;
         current_index++;
         while (is_extension(qf, current_index)) {
           current_index++;
         }
-      }
+    }
+
+#if 0
+	uint64_t nearest_memento = lower_bound_memento(qf, hash_memento, current_index, memento_offset); 
+	if (nearest_memento == hash_memento) {
+		return 1;
+	} else {
+		return 0;
+	}
+#endif
+
+
       uint64_t current_slot = get_slot(qf, current_index);
       current_slot = current_slot >> memento_offset;
       uint64_t current_memento = current_slot & BITMASK(qf->metadata->value_bits);;
+	  if (current_memento == l_memento) return 1;
       current_slot >>= qf->metadata->value_bits;
       uint64_t next_memento;
 
@@ -3832,7 +3856,7 @@ int qf_point_query(const QF* qf, uint64_t key, uint8_t flags) {
         if (next_memento < current_memento) {
           return 0;
         }
-        if (next_memento == current_memento) {
+        if (next_memento == l_memento) {
           return 1;
         }
         current_memento = next_memento;
