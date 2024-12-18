@@ -33,7 +33,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" )
 elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" )
   target_compile_options(arqflib PUBLIC -Og -fno-omit-frame-pointer -m64 -DDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 else()
-  target_compile_options(arqflib PUBLIC -Ofast -m64 -march=native -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+  target_compile_options(arqflib PUBLIC -Ofast -msse4.2 -D__SSE4_2_ -march=native -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 endif()
 
 # I don't think the -rpath option is working...

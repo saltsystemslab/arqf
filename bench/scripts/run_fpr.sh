@@ -40,11 +40,11 @@ do
     --csv ${RESULT_DIR}/${dir}memento_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
 
-  #${BIN_DIR}/bench/bench_adaptive_arqf_splinterdb $bpk \
-  #  --keys ${WORKLOAD_DIR}/keys \
-  #  --workload ${dir}left ${dir}right ${dir}result \
-  #  --csv ${RESULT_DIR}/${dir}adaptive_arqf_splinterdb_${TEST_TYPE}.csv \
-  #  --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
+  ${BIN_DIR}/bench/bench_adaptive_arqf_splinterdb $bpk \
+    --keys ${WORKLOAD_DIR}/keys \
+    --workload ${dir}left ${dir}right ${dir}result \
+    --csv ${RESULT_DIR}/${dir}adaptive_arqf_splinterdb_${TEST_TYPE}.csv \
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
 
   ${BIN_DIR}/bench/bench_arqf $bpk \
     --keys ${WORKLOAD_DIR}/keys \
