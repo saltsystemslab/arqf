@@ -506,6 +506,57 @@ static inline void move_and_maybe_rejuvenate_keepsake(ARQF *arqf, QF *new_qf,
 }
 
 
+int arqf_expand_full(ARQF *arqf) {
+    QF *qf = arqf->qf;
+
+	QF new_qf;
+	if (!qf_malloc(&new_qf, 2 * qf->metadata->nslots, qf->metadata->key_bits + 1, qf->metadata->value_bits,
+                   qf->metadata->hash_mode, qf->metadata->seed, qf->metadata->is_expandable))
+        return 0;
+	if (qf->runtimedata->auto_resize)
+        qf_set_auto_resize(&new_qf, true);
+    new_qf.metadata->orig_quotient_bits = qf->metadata->orig_quotient_bits;
+    new_qf.metadata->splinter_expand_read_clocks = 0;
+    new_qf.metadata->splinter_expand_delete_clocks = 0;
+    new_qf.metadata->splinter_expand_insert_clocks = 0;
+
+    uint64_t hash, mementos[500 * (1ULL << new_qf.metadata->value_bits) + 50];
+    uint32_t hash_len, num_mementos = 0;
+    uint64_t void_hash = 0, void_mementos[500 * (1ULL << new_qf.metadata->value_bits) + 50];
+    uint32_t void_num_mementos = 0;
+	QFi qfi;
+    qf_iterator_from_position(qf, &qfi, 0);
+	qfi_get_hash(&qfi, &hash, &hash_len, mementos + num_mementos);
+    assert(hash_len >= new_qf.metadata->quotient_bits - 1);
+    hash = hash_len < new_qf.metadata->quotient_bits ? hash : move_one_bit_in_hash(&new_qf, hash);
+    num_mementos++;
+    for (qfi_next(&qfi); !qfi_end(&qfi); qfi_next(&qfi)) {
+        uint64_t new_hash, new_memento;
+        uint32_t new_hash_len;
+        qfi_get_hash(&qfi, &new_hash, &new_hash_len, &new_memento);
+        assert(new_hash_len >= new_qf.metadata->quotient_bits - 1);
+
+        if (new_hash > void_hash) {
+            move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, void_hash, new_qf.metadata->quotient_bits - 1,
+                                               void_mementos, void_num_mementos);
+        }
+        else {
+            void_hash = new_hash;
+            void_mementos[void_num_mementos++] = new_memento;
+        }
+    }
+    if (void_num_mementos > 0) {
+        move_and_maybe_rejuvenate_keepsake(arqf, &new_qf, void_hash, new_qf.metadata->quotient_bits - 1,
+                                           void_mementos, void_num_mementos);
+        void_num_mementos = 0;
+    }
+
+	qf_free(qf);
+	memcpy(qf, &new_qf, sizeof(QF));
+	return 1;
+}
+
+
 int arqf_expand(ARQF *arqf) {
     QF *qf = arqf->qf;
 

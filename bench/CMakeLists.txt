@@ -64,6 +64,10 @@ function(compile_bench ds)
       target_include_directories(bench_expandable_adaptive_arqf_splinterdb PUBLIC ../adaptiveqf/external/splinterdb/include/)
       target_link_libraries(bench_expandable_adaptive_arqf_splinterdb argparse ${WIREDTIGER_LIB})
 
+      add_executable(bench_expandable_adaptive_arqf_splinterdb_reconstruct filters_benchmark/bench_expandable_adaptive_arqf_splinterdb_reconstruct.cpp)
+      target_include_directories(bench_expandable_adaptive_arqf_splinterdb_reconstruct PUBLIC ../adaptiveqf/external/splinterdb/include/)
+      target_link_libraries(bench_expandable_adaptive_arqf_splinterdb_reconstruct argparse ${WIREDTIGER_LIB})
+
       add_executable(bench_expandable_adaptive_arqf_inmem filters_benchmark/bench_expandable_adaptive_arqf_inmem.cpp)
       target_include_directories(bench_expandable_adaptive_arqf_inmem PUBLIC ../adaptiveqf/external/splinterdb/include/)
       target_link_libraries(bench_expandable_adaptive_arqf_inmem argparse ${WIREDTIGER_LIB})
@@ -84,6 +88,12 @@ function(compile_bench ds)
         target_link_libraries(bench_expandable_memento mementoexpandablelib argparse)
         target_include_directories(bench_expandable_memento PUBLIC ../adaptiveqf/external/splinterdb/include/)
         target_compile_options(bench_expandable_memento INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+
+        add_executable(bench_expandable_memento_reconstruct filters_benchmark/bench_expandable_memento_reconstruct.cpp)
+        target_link_libraries(bench_expandable_memento_reconstruct ${WIREDTIGER_LIB})
+        target_link_libraries(bench_expandable_memento_reconstruct mementoexpandablelib argparse)
+        target_include_directories(bench_expandable_memento_reconstruct PUBLIC ../adaptiveqf/external/splinterdb/include/)
+        target_compile_options(bench_expandable_memento_reconstruct INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 
         set(Boost_USE_STATIC_LIBS OFF)
         set(Boost_USE_STATIC_RUNTIME OFF)
@@ -134,6 +144,10 @@ function(compile_bench ds)
 
       target_link_libraries(bench_expandable_adaptive_arqf_splinterdb arqflib) 
       target_compile_options(bench_expandable_adaptive_arqf_splinterdb INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+
+      target_link_libraries(bench_expandable_adaptive_arqf_splinterdb_reconstruct arqflib) 
+      target_compile_options(bench_expandable_adaptive_arqf_splinterdb_reconstruct INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+      
     elseif (ds MATCHES "grafite")
         add_library(grafitelib INTERFACE)
         if ("sux" IN_LIST SUCCINCT_LIBS)

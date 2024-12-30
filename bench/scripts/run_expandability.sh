@@ -2,8 +2,6 @@
 BIN_DIR=./release
 BPK=16
 
-set -x
-
 if [[ $1 == "small" ]]; then
 WORKLOAD_DIR=$2/expandability_small/kuniform
 CACHE_SIZE=16
@@ -38,5 +36,5 @@ do
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/5_qzipfian_trial_0/left ${WORKLOAD_DIR}/5_qzipfian_trial_0/right ${WORKLOAD_DIR}/5_qzipfian_trial_0/result \
     --csv ${WORKLOAD_DIR}/5_qzipfian_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1 > ${filter}.txt
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1 > ${filter}_$1.txt
 done

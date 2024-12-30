@@ -41,6 +41,7 @@ int arqf_adapt(ARQF* arqf, uint64_t fp_key, int flags);
 int arqf_adapt_range(ARQF* arqf, uint64_t left, uint64_t right, int flags);
 
 int arqf_expand(ARQF *arqf);
+int arqf_expand_full(ARQF *arqf);
 int arqf_insert(ARQF *arqf, uint64_t key);
 int arqf_free(ARQF *arqf);
 
