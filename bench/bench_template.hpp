@@ -632,6 +632,25 @@ void experiment_expandability_disk(
             error_check(cursor->reset(cursor));
             t_duration_expansion_time = 0;
             t_duration_wt_scan_time = 0;
+
+            start_timer(query_time);
+            uint64_t fp = 0;
+            for (uint64_t i = 0; i < queries.size(); i++) {
+                auto q = queries[i];
+                const auto [l, r, orig] = q;
+                uint64_t left = l;
+                uint64_t right = r;
+                bool original_result = orig;
+                bool query_result = range_f(f, left, right);
+                if (query_result) {
+                    fp++;
+                }
+            }
+            measure_timer(query_time);
+            test_out.add_measure(std::string("query_time_") + expansion_str, t_duration_query_time);
+            test_out.add_measure(std::string("false_positives_") + expansion_str, fp);
+            test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
+            test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
         }
     }
 
