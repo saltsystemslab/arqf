@@ -178,3 +178,8 @@ endif()
 add_executable(workload_gen workload_gen.cpp zipf.c)
 target_include_directories(workload_gen PUBLIC ../external/wiredtiger/build/include)
 target_link_libraries(workload_gen argparse ${WIREDTIGER_LIB})
+
+add_executable(bench_splinter splinterdb/bench_splinterdb.cpp)
+target_link_libraries(bench_splinter PUBLIC argparse arqflib)
+target_include_directories(bench_splinter PUBLIC /home/chesetti/local/include ../adaptiveqf/include  ./include ../adaptiveqf/external/splinterdb/include)
+target_compile_options(bench_splinter PUBLIC -Ofast -m64 -DDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)

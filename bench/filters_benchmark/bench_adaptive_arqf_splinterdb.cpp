@@ -190,7 +190,7 @@ inline ARQF *init_qf(const t_itr begin, const t_itr end, bool load_keys, const d
     data_config* data_cfg;
     splinterdb_config* splinterdb_cfg;
     splinterdb* db;
-    qf_init_splinterdb(&db, &data_cfg, &splinterdb_cfg, "rhm");
+    qf_init_splinterdb(&db, &data_cfg, &splinterdb_cfg, "rhm", splinter_cache_size_mb, splinter_memtable_size_mb);
     ARQF* arqf = (ARQF*)malloc(sizeof(ARQF));
     arqf_init_with_rhm(arqf, db, n_slots, key_size, memento_bits, seed);
 
@@ -251,6 +251,8 @@ inline void add_metadata(ARQF *qf) {
   test_out.add_measure("db_insert_duration", qf->qf->metadata->db_insert_duration);
 
   test_out.add_measure("n_filter_queries", qf->qf->metadata->n_filter_queries);
+  test_out.add_measure("splinter_cache_size_mb", splinter_cache_size_mb);
+  test_out.add_measure("splinter_memtable_size_mb", splinter_memtable_size_mb);
 }
 
 template <typename value_type>

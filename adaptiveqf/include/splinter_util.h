@@ -31,10 +31,11 @@ int merge_tuples_final(const data_config *cfg, slice key, merge_accumulator *old
 // data_config qf_data_config_init();
 // splinterdb_config qf_splinterdb_config_init(char *db_path, data_config *data_cfg);
 
-void qf_init_splinterdb(splinterdb **db, data_config **data_cfg, splinterdb_config **splinter_cfg, char *db_path);
+void qf_init_splinterdb(splinterdb **db, data_config **data_cfg, splinterdb_config **splinter_cfg, char *db_path, uint64_t splinter_cache_size_mb, uint64_t splinter_memtable_size_mb);
 void qf_data_config_init(data_config *data_cfg);
-void qf_splinterdb_config_init(splinterdb_config *splinter_cfg, char *db_path, data_config *data_cfg);
+void qf_splinterdb_config_init(splinterdb_config *splinter_cfg, char *db_path, data_config *data_cfg, uint64_t splinter_cache_size_mb, uint64_t splinter_memtable_size_mb);
 void qf_splinterdb_init(splinterdb *db);
+void qf_splinterdb_close(splinterdb *db);
 
 void pad_data(void *dest, const void *src, const size_t dest_len, const size_t src_len, const int flagged);
 slice padded_slice(const void *data, const size_t dest_len, const size_t src_len, void *buffer, const int flagged);

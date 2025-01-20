@@ -26,6 +26,7 @@ static uint64_t optimizer_hack = 0;
 const int default_key_len = 8, default_val_len = 504;
 uint64_t key_len, val_len;
 uint64_t mixed_num_warmup_keys, mixed_num_read_queries, mixed_num_write_queries;
+uint64_t splinter_cache_size_mb, splinter_memtable_size_mb;
 uint64_t default_buffer_pool_size_mb = 64;
 uint64_t buffer_pool_size_mb = 0;
 float adversarial_rate = 0.1;
@@ -525,10 +526,10 @@ void experiment_mixed_workload(
     std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
     std::cerr << "[+] Done with warmup phase "<<std::endl;
 
-
+    uint64_t ops_per_cycle = 100;
     uint64_t total_ops = mixed_num_read_queries + mixed_num_write_queries;
-    uint64_t read_ops_per_cycle = ((mixed_num_read_queries * 100 ) / total_ops);
-    uint64_t write_ops_per_cycle = ((mixed_num_write_queries * 100) / total_ops);
+    uint64_t read_ops_per_cycle = ((mixed_num_read_queries * ops_per_cycle ) / total_ops);
+    uint64_t write_ops_per_cycle = ((mixed_num_write_queries * ops_per_cycle) / total_ops);
     uint64_t num_cycles = total_ops / 100;
     uint64_t read_op_idx = 0;
     uint64_t write_op_idx = mixed_num_warmup_keys;
@@ -691,6 +692,16 @@ argparse::ArgumentParser init_parser(const std::string &name)
         .nargs(1)
         .scan<'u', uint64_t>();
 
+    parser.add_argument("--splinter_cache_size_mb")
+        .help("Splinter Cache Size in MB")
+        .nargs(1)
+        .scan<'u', uint64_t>();
+
+    parser.add_argument("--splinter_memtable_size_mb")
+        .help("Splinter Memtable Size in MB")
+        .nargs(1)
+        .scan<'u', uint64_t>();
+
     return parser;
 }
 
@@ -718,6 +729,8 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
       mixed_num_read_queries = parser.get<uint64_t>("--mixed_num_reads");
       mixed_num_write_queries = parser.get<uint64_t>("--mixed_num_writes");
       buffer_pool_size_mb = parser.get<uint64_t>("--buffer_pool_size");
+      splinter_cache_size_mb = parser.get<uint64_t>("--splinter_cache_size_mb");
+      splinter_memtable_size_mb = parser.get<uint64_t>("--splinter_memtable_size_mb");
     }
 
     Workload<uint64_t> queries;

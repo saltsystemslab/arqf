@@ -23,12 +23,14 @@ void qf_data_config_init(data_config *data_cfg) {
 	data_cfg->merge_tuples_final = merge_tuples_final;
 }
 
-void qf_splinterdb_config_init(splinterdb_config *splinter_cfg, char *db_path, data_config *data_cfg) {
+void qf_splinterdb_config_init(splinterdb_config *splinter_cfg, char *db_path, data_config *data_cfg, uint64_t splinter_cache_size_mb, uint64_t memtable_size_mb) {
     splinter_cfg->filename = db_path;
-    splinter_cfg->cache_size = 64 * Mega;
     splinter_cfg->disk_size = 20 * Giga;
     splinter_cfg->data_cfg = data_cfg;
-		splinter_cfg->io_flags= O_RDWR | O_CREAT | O_DIRECT;
+    splinter_cfg->cache_size = splinter_cache_size_mb * Mega;
+    splinter_cfg->memtable_capacity = memtable_size_mb * Mega;
+    splinter_cfg->reclaim_threshold = 4 * Mega;
+	splinter_cfg->io_flags= O_RDWR | O_CREAT | O_DIRECT;
 }
 
 void pad_data(void *dest, const void *src, const size_t dest_len, const size_t src_len, const int flagged) {
@@ -89,14 +91,18 @@ int qf_splinter_insert_split(QF *qf, splinterdb *db, splinterdb *bm, uint64_t ke
 	}
 }
 
-void qf_init_splinterdb(splinterdb **db, data_config **data_cfg, splinterdb_config **splinterdb_cfg, char *db_path) {
+void qf_init_splinterdb(splinterdb **db, data_config **data_cfg, splinterdb_config **splinterdb_cfg, char *db_path, uint64_t cache_size_mb, uint64_t memtable_size_mb) {
     *data_cfg = (data_config *)malloc(sizeof(data_config));
     *splinterdb_cfg = (splinterdb_config *)malloc(sizeof(splinterdb_config));
     memset((*splinterdb_cfg), 0, sizeof(splinterdb_config));
     qf_data_config_init(*data_cfg);
-    qf_splinterdb_config_init(*splinterdb_cfg, db_path, *data_cfg);
+    qf_splinterdb_config_init(*splinterdb_cfg, db_path, *data_cfg, cache_size_mb, memtable_size_mb);
 
     if (splinterdb_create(*splinterdb_cfg, db)) {
       abort();
     }
+}
+
+void qf_splinterdb_close(splinterdb *db) {
+	splinterdb_close(&db);
 }
