@@ -244,7 +244,7 @@ void experiment_adaptivity(
 
 const uint32_t expansion_count = 8;
 
-template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+template <typename InitFun, typename InsertFun, typename RangeFun, typename AdaptFun, typename ShouldReconstructFun, typename SizeFun, typename FreeFun, typename MetadataFun, typename key_type, typename... Args>
 void experiment_expandability(
     InitFun init_f, 
     InsertFun insert_f, 
@@ -252,84 +252,105 @@ void experiment_expandability(
     AdaptFun adapt_f, 
     ShouldReconstructFun should_reconstruct_f, 
     SizeFun size_f, 
+    FreeFun free_f, 
     MetadataFun metadata_f, 
     const double param, 
     InputKeys<key_type> &keys, 
     Workload<key_type> &queries, 
     Args... args)
 {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<uint64_t> distr(1, (1ULL<<63)-1);
+
+    // Begin loading DB.
+    std::set<uint64_t> db;
     const uint64_t N = keys.size();
     const uint64_t n_queries = queries.size() / (expansion_count + 1);
-    uint64_t current_dataset_size = N >> expansion_count;
-    std::cerr << "WEEEEEEEEEEELP current_dataset_size=" << current_dataset_size << std::endl;
-    auto f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
-
-    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
-
-    for (uint32_t expansion = 0; expansion <= expansion_count; expansion++) {
-        std::string expansion_str = std::to_string(expansion);
-        auto size = size_f(f);
-        test_out.add_measure(std::string("size_") + expansion_str, size);
-        test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, current_dataset_size));
-
-        if (expansion > 0) {
-            if (should_reconstruct_f(f)) {
-                current_dataset_size = std::min(current_dataset_size * 2, N);
-                std::cerr << "CANNOT EXPAND, RECONSTRUCTING INSTEAD" << std::endl;
-                f = init_f(keys.begin(), keys.begin() + current_dataset_size, param, args...);
-                std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
-            }
-            std::cerr << "START EXPANSION PROCESS" << std::endl;
-            std::cerr << "current_dataset_size=" << current_dataset_size << std::endl;
-            start_timer(expansion_time);
-            for (uint32_t i = 0; i < current_dataset_size && i + current_dataset_size < N; i++)
-                insert_f(f, keys[current_dataset_size + i]);
-            measure_timer(expansion_time);
-            test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
-            current_dataset_size = std::min(current_dataset_size * 2, N);
-            std::cerr << "DONE WITH EXPANSION PROCESS --- current_dataset_size=" << current_dataset_size << " vs. N=" << N << std::endl;
-        }
-
-        auto fp = 0, fn = 0, fa = 0;
-        std::map<uint64_t, uint64_t> fp_count;
-        std::cerr << "START QUERY PROCESS" << std::endl;
-        start_timer(query_time);
-        for (uint32_t i = expansion * n_queries; i < (expansion + 1) * n_queries; i++) {
-            const auto [left, right, original_result] = queries[i];
-
-            bool query_result = range_f(f, left, right);
-            if (query_result && !original_result) {
-                if (!adapt_f(f, left, right))
-                  fa++;
-#if DEBUG
-                else {
-                  query_result = range_f(f, left, right);
-                  if (query_result)
-                    std::cerr << "[!] alert, adapting " <<left<<" "<<right<<" failed!" << std::endl;
-                }
-#endif
-                fp_count[left]++;
-                fp++;
-            }
-            else if (!query_result && original_result) {
-                std::cerr << "[!] alert, found false negative!" << std::endl;
-                fn++;
-            }
-        }
-        measure_timer(query_time);
-        std::cerr << "DONE WITH QUERY PROCESS" << std::endl;
-
-        test_out.add_measure(std::string("query_time_" + expansion_str), t_duration_query_time);
-        test_out.add_measure(std::string("false_positives_" + expansion_str), fp);
-        test_out.add_measure(std::string("fpr_" + expansion_str), static_cast<double>(fp) / queries.size());
-        test_out.add_measure(std::string("false_neg_" + expansion_str), fn);
-        test_out.add_measure(std::string("n_keys_" + expansion_str), current_dataset_size);
-        test_out.add_measure(std::string("n_queries_" + expansion_str), n_queries);
-        test_out.add_measure(std::string("num_fp_keys_" + expansion_str), fp_count.size());
-        metadata_f(f);
+    std::cout << "[+] n_queries=" << n_queries << std::endl;
+    for (uint32_t i = 0; i < N >> expansion_count; i++) {
+        db.insert(keys[i]);
     }
 
+    auto f = init_f(keys.begin(), keys.begin() + (N >> expansion_count), param, args...);
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
+
+    for (uint32_t i = N >> expansion_count; i < N; i++) {
+        db.insert(keys[i]);
+        insert_f(f, keys[i]);
+
+        if (just_expanded && !should_reconstruct_f(f)) {
+            requires_full_db_scan = false;
+            // Memento Resized, but doesn't need to scan the DB yet.
+        }
+        if (should_reconstruct_f(f)) {
+            requires_full_db_scan = true;
+            std::cerr << "cannot expand, reconstructing instead" << std::endl;
+            t_start_expansion_time = timer::now();
+            free_f(f);
+            f = init_f(db.begin(), db.end(), param, args...);
+            t_end_expansion_time = timer::now();
+            t_duration_expansion_time += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_expansion_time - t_start_expansion_time).count();
+            std::cerr << "DONE WITH RECONSTRUCTION PROCESS --- current_dataset_size=" << i << " vs. N=" << N << " (expansion=" << expansion << ")" << std::endl;
+            just_expanded = false;
+        }
+
+        if (just_expanded) {
+            just_expanded = false;
+            expansion++;
+            std::cerr << "==== EXPANSION " << expansion <<" ======== "<<std::endl;
+            std::string expansion_str = std::to_string(expansion);
+            auto size = size_f(f);
+            test_out.add_measure(std::string("expansion_trigger_key_") + expansion_str, i);
+            test_out.add_measure(std::string("expansion_time_") + expansion_str, t_duration_expansion_time);
+            test_out.add_measure(std::string("filter_size_") + expansion_str, size);
+            test_out.add_measure(std::string("bpk_") + expansion_str, TO_BPK(size, i));
+            test_out.add_measure(std::string("did_full_db_scan_") + expansion_str, std::to_string(requires_full_db_scan));
+            test_out.add_measure(std::string("wt_scan_time_") + expansion_str, t_duration_wt_scan_time);
+            metadata_f(f);
+            test_out.print();
+
+            t_duration_expansion_time = 0;
+            t_duration_wt_scan_time = 0;
+
+            start_timer(query_time);
+            uint64_t fp = 0;
+            uint64_t adapt_duration_ns = 0;
+            uint64_t true_queries = 0;
+            // for (uint64_t i = 0; i < queries.size(); i++) {
+            for (uint64_t i = (expansion-1) * (queries.size()/8); i < (expansion * queries.size()/8); i++) {
+                auto q = queries[i];
+                const auto [l, r, orig] = q;
+                uint64_t left = l;
+                uint64_t right = r;
+                bool original_result = orig;
+                bool query_result = range_f(f, left, right);
+                if (query_result) {
+                    fp++;
+                    if (db.lower_bound(left) != db.upper_bound(right)) {
+                        true_queries++;
+                    }
+                    start_timer(adapt_qf);
+                    adapt_f(f, left, right);
+                    measure_timer(adapt_qf);
+                    adapt_duration_ns += t_duration_adapt_qf;
+                }
+            }
+            measure_timer(query_time);
+            test_out.add_measure(std::string("query_time_") + expansion_str, t_duration_query_time);
+            test_out.add_measure(std::string("false_positives_") + expansion_str, fp);
+            test_out.add_measure(std::string("true_queries") + expansion_str, true_queries);
+            // test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
+            // test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
+            test_out.add_measure(std::string("n_queries_") + expansion_str, queries.size()/8);
+            test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / (queries.size()/8));
+            test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
+        }
+    }
+
+    metadata_f(f);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+    std::cout << "[+] Optimizer hack" << optimizer_hack << std::endl;
 }
 
 int
@@ -635,7 +656,9 @@ void experiment_expandability_disk(
 
             start_timer(query_time);
             uint64_t fp = 0;
-            for (uint64_t i = 0; i < queries.size(); i++) {
+            uint64_t adapt_duration_ns = 0;
+            // for (uint64_t i = 0; i < queries.size(); i++) {
+            for (uint64_t i = (expansion-1) * (queries.size()/8); i < (expansion * queries.size()/8); i++) {
                 auto q = queries[i];
                 const auto [l, r, orig] = q;
                 uint64_t left = l;
@@ -644,13 +667,20 @@ void experiment_expandability_disk(
                 bool query_result = range_f(f, left, right);
                 if (query_result) {
                     fp++;
+                    start_timer(adapt_qf);
+                    adapt_f(f, left, right);
+                    measure_timer(adapt_qf);
+                    adapt_duration_ns += t_duration_adapt_qf;
                 }
             }
             measure_timer(query_time);
             test_out.add_measure(std::string("query_time_") + expansion_str, t_duration_query_time);
             test_out.add_measure(std::string("false_positives_") + expansion_str, fp);
-            test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
-            test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
+            // test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
+            // test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
+            test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / (queries.size()/8));
+            test_out.add_measure(std::string("n_queries_") + expansion_str, queries.size()/8);
+            test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
         }
     }
 
@@ -864,7 +894,7 @@ std::tuple<InputKeys<uint64_t>, Workload<uint64_t>, double> read_parser_argument
     auto files = parser.get<std::vector<std::string>>("workload");
 
     auto test_type = parser.get<std::string>("--test-type");
-    if (test_type == "adaptivity_disk" || test_type == "expandability_disk") {
+    if (test_type == "adaptivity_disk" || test_type == "expandability_disk" || test_type=="expandability_inmem") {
       key_len = parser.get<uint64_t>("--key_len");
       val_len = parser.get<uint64_t>("--val_len");
       uint64_t adversarial_percent = parser.get<uint64_t>("--adversarial_rate");

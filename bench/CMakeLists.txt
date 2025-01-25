@@ -67,6 +67,10 @@ function(compile_bench ds)
       add_executable(bench_expandable_adaptive_arqf_inmem filters_benchmark/bench_expandable_adaptive_arqf_inmem.cpp)
       target_include_directories(bench_expandable_adaptive_arqf_inmem PUBLIC ../adaptiveqf/external/splinterdb/include/)
       target_link_libraries(bench_expandable_adaptive_arqf_inmem argparse ${WIREDTIGER_LIB})
+
+      add_executable(bench_expandable_arqf filters_benchmark/bench_expandable_arqf.cpp)
+      target_include_directories(bench_expandable_arqf PUBLIC ../adaptiveqf/external/splinterdb/include/)
+      target_link_libraries(bench_expandable_arqf argparse ${WIREDTIGER_LIB})
     endif()
 
     if (ds MATCHES "memento")
@@ -125,6 +129,9 @@ function(compile_bench ds)
 
       target_link_libraries(bench_expandable_adaptive_arqf_inmem arqflib) 
       target_compile_options(bench_expandable_adaptive_arqf_inmem INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
+      
+      target_link_libraries(bench_expandable_arqf arqflib) 
+      target_compile_options(bench_expandable_arqf INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)
 
       target_link_libraries(bench_adaptive_arqf_wiredtiger arqflib) 
       target_compile_options(bench_adaptive_arqf_wiredtiger INTERFACE -DNDEBUG -DSPLINTERDB_PLATFORM_DIR=platform_linux -DSKIP_BOOL_DEF -D_GNU_SOURCE)

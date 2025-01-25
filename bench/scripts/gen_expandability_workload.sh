@@ -36,4 +36,5 @@ mkdir -p ${WORKLOAD_PATH}
  
 cd ${WORKLOAD_PATH}
 
+$WORKLOAD_GEN_PATH -n ${N_ELEMS} -q ${N_QUERY} --kdist kuniform --qdist quniform -u $Q_UNIVERSE_SIZE -t 1 --expansion-count 8
 $WORKLOAD_GEN_PATH -n ${N_ELEMS} -q ${N_QUERY} --kdist kuniform --qdist qzipfian -u $Q_UNIVERSE_SIZE -t 1 --expansion-count 8

@@ -317,6 +317,7 @@ void run_test(
         adapt_f,
         should_reconstruct_f,
         size_f,
+        free_f,
         metadata_f,
         arg,
         keys,
