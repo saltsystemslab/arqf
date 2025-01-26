@@ -35,6 +35,7 @@ auto s = 10999;
 // #define seed rd()
 
 bool save_binary = true;
+bool save_keys_to_db = false;
 bool allow_true_queries = false;
 bool mixed_queries = false;
 
@@ -96,7 +97,9 @@ void save_keys(InputKeys<uint64_t> &keys, const std::string &file)
     else {
         save_keys_to_file(keys, file + ".txt");
     }
-    save_keys_to_db(keys, file);
+    if (save_keys_to_db) {
+        write_keys_to_db(keys, file);
+    }
 }
 
 void save_queries(Workload<uint64_t> &work, const std::string &l_keys, const std::string &r_keys = "", const std::string &res_keys = "")
@@ -427,7 +430,8 @@ void generate_synth_datasets(const std::vector<std::string> &kdist, const std::v
 }
 
 std::pair<InputKeys<uint64_t>, std::vector<Workload<uint64_t>>>
-generate_real_queries(std::vector<uint64_t> &data, uint64_t n_queries, std::vector<uint64_t> &range_list, bool remove_duplicates = true) {
+generate_real_queries(std::vector<uint64_t> &data, uint64_t total_queries, uint64_t total_unique_queries, std::vector<uint64_t> &range_list, bool remove_duplicates = true) {
+    uint64_t n_queries = total_unique_queries;
     std::vector<std::pair<uint64_t, int>> candidates;
 
     std::vector<Workload<uint64_t>> queries_list((mixed_queries) ? range_list.size() + 1 : range_list.size());
@@ -500,11 +504,22 @@ generate_real_queries(std::vector<uint64_t> &data, uint64_t n_queries, std::vect
         }
     }
 
-    return std::make_pair(keys, queries_list);
+    // Extract a zipfian distribution from each of these queries.
+    std::vector<Workload<uint64_t>> zipf_queries_list((mixed_queries) ? range_list.size() + 1 : range_list.size());
+    for (auto i=0; i < range_list.size(); i++) {
+        uint64_t *zipf_set = new uint64_t[total_queries];
+        generate_random_keys(zipf_set, queries_list[i].size(), total_queries, 1.5);
+        for (auto j=0; j<total_queries; j++) {
+            zipf_queries_list[i].push_back(queries_list[i][zipf_set[j]]);
+        }
+        delete zipf_set;
+    }
+
+    return std::make_pair(keys, zipf_queries_list);
 }
 
 template <typename value_type = uint64_t>
-void generate_real_dataset(const std::string& file, uint64_t n_queries, std::vector<int> range_size_list) {
+void generate_real_dataset(const std::string& file, uint64_t n_queries, uint64_t total_unique_queries, std::vector<int> range_size_list) {
     std::vector<uint64_t> ranges(range_size_list.size());
     std::transform(range_size_list.begin(), range_size_list.end(), ranges.begin(), [](auto v) {
         return (1ULL << v);
@@ -514,24 +529,22 @@ void generate_real_dataset(const std::string& file, uint64_t n_queries, std::vec
     std::string::size_type pos = base_filename.find('_');
     std::string dir_name = (pos != std::string::npos) ? base_filename.substr(0, pos) : base_filename;
     std::string root_path = "./" + dir_name + "/";
+    std::cout<<"Reading source file: "<<file<<std::endl;
     auto temp_data = read_data_binary<value_type>(file);
     auto all_data = std::vector<uint64_t>(temp_data.begin(), temp_data.end());
     assert(all_data.size() > n_queries);
 
     std::cout << "[+] starting `" << dir_name << "` dataset generation" << std::endl;
-    auto [keys, queries_list] = generate_real_queries(all_data, n_queries, ranges);
+    auto [keys, queries_list] = generate_real_queries(all_data, n_queries, total_unique_queries, ranges);
     std::cout << std::endl << "[+] full dataset generated" << std::endl;
     std::cout << "[+] nkeys=" << keys.size() << ", nqueries=" << queries_list[0].size() << std::endl;
 
     for (auto i = 0; i < ranges.size(); i++) {
         auto range_size = ranges[i];
 
-        std::string queries_path = root_path + std::to_string(range_size_list[i]) + "/";
+        std::string queries_path = root_path + std::to_string(range_size_list[i]) + "_qzipfian_trial_0/";
         if (!create_dir_recursive(queries_path))
             throw std::runtime_error("error, impossible to create dir");
-        if (range_size == 1)
-            save_queries(queries_list[i], queries_path + "point");
-        else
             save_queries(queries_list[i], queries_path + "left", queries_path + "right");
         std::cout << "[+] queries wrote at " << queries_path << std::endl;
     }
@@ -601,6 +614,11 @@ int main(int argc, char const *argv[]) {
             .implicit_value(true)
             .default_value(false);
 
+    parser.add_argument("--save-keys-to-db")
+            .help("Save all the keys to a wiredtiger DB or not")
+            .implicit_value(true)
+            .default_value(false);
+
     parser.add_argument("--mixed")
             .help("generates mixed range queries in the range [0, 2^last_range_size]")
             .implicit_value(true)
@@ -656,6 +674,7 @@ int main(int argc, char const *argv[]) {
     auto n_query_sets = parser.get<uint64_t>("--n-query-sets");
 
     allow_true_queries = parser.get<bool>("--allow-true");
+    save_keys_to_db = parser.get<bool>("--save-keys-to-db");
     mixed_queries = parser.get<bool>("--mixed");
 
     assert((n_keys > 0) && (n_queries > 0));
@@ -667,9 +686,9 @@ int main(int argc, char const *argv[]) {
         for (const auto &file : *file_list)
         {
             if (file.find("uint32") != std::string::npos)
-                generate_real_dataset<uint32_t>(file, n_queries, ranges_int);
+                generate_real_dataset<uint32_t>(file, n_queries, zipf_universe_size, ranges_int);
             else
-                generate_real_dataset(file, n_queries, ranges_int);
+                generate_real_dataset(file, n_queries, zipf_universe_size, ranges_int);
         }
 
     }

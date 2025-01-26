@@ -180,7 +180,7 @@ static void save_keys_to_file(InputKeys<KeyType> &keys, const std::string &file)
 }
 
 template<typename KeyType>
-static void save_keys_to_db(InputKeys<KeyType> &keys, const std::string &file) {
+static void write_keys_to_db(InputKeys<KeyType> &keys, const std::string &file) {
 
     std::cout<<"Writing Keys" << std::endl;
     std::string wt_home = file + "_wtdb";
