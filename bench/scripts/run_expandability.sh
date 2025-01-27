@@ -32,11 +32,20 @@ do
   rm ${dir}adaptive_expandable_arqf_inmem${TEST_TYPE}.csv
 done
 
-for filter in expandable_arqf expandable_memento 
+for filter in expandable_adaptive_arqf_splinterdb 
 do
   ${BIN_DIR}/bench/bench_${filter} 13 \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${WORKLOAD_DIR}/5_quniform_trial_0/left ${WORKLOAD_DIR}/5_quniform_trial_0/right ${WORKLOAD_DIR}/5_quniform_trial_0/result \
     --csv ${WORKLOAD_DIR}/5_quniform_trial_0/${filter}_${TEST_TYPE}.csv \
-    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE} --adversarial_rate 1 > ${filter}.txt
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size 960 --adversarial_rate 1 > ${filter}.txt
+done
+
+for filter in expandable_memento
+do
+  ${BIN_DIR}/bench/bench_${filter} 13 \
+    --keys ${WORKLOAD_DIR}/keys \
+    --workload ${WORKLOAD_DIR}/5_quniform_trial_0/left ${WORKLOAD_DIR}/5_quniform_trial_0/right ${WORKLOAD_DIR}/5_quniform_trial_0/result \
+    --csv ${WORKLOAD_DIR}/5_quniform_trial_0/${filter}_${TEST_TYPE}.csv \
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size 1024 --adversarial_rate 1 > ${filter}.txt
 done

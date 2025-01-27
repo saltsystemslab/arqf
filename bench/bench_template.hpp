@@ -657,7 +657,6 @@ void experiment_expandability_disk(
             start_timer(query_time);
             uint64_t fp = 0;
             uint64_t adapt_duration_ns = 0;
-            // for (uint64_t i = 0; i < queries.size(); i++) {
             for (uint64_t i = (expansion-1) * (queries.size()/8); i < (expansion * queries.size()/8); i++) {
                 auto q = queries[i];
                 const auto [l, r, orig] = q;
@@ -667,20 +666,13 @@ void experiment_expandability_disk(
                 bool query_result = range_f(f, left, right);
                 if (query_result) {
                     fp++;
-                    start_timer(adapt_qf);
-                    adapt_f(f, left, right);
-                    measure_timer(adapt_qf);
-                    adapt_duration_ns += t_duration_adapt_qf;
                 }
             }
             measure_timer(query_time);
             test_out.add_measure(std::string("query_time_") + expansion_str, t_duration_query_time);
             test_out.add_measure(std::string("false_positives_") + expansion_str, fp);
-            // test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / queries.size());
-            // test_out.add_measure(std::string("n_queries_") + expansion_str, n_queries);
             test_out.add_measure(std::string("fpr_") + expansion_str, static_cast<double>(fp) / (queries.size()/8));
             test_out.add_measure(std::string("n_queries_") + expansion_str, queries.size()/8);
-            test_out.add_measure(std::string("adapt_duration_ns_") + expansion_str, adapt_duration_ns);
         }
     }
 
