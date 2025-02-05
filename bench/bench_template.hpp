@@ -147,6 +147,60 @@ void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double p
 }
 
 template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
+void experiment_insert(
+    InitFun init_f, 
+    RangeFun range_f, 
+    AdaptFun adapt_f, 
+    SizeFun size_f, 
+    MetadataFun metadata_f, 
+    const double param, 
+    InputKeys<key_type> &keys, 
+    Workload<key_type> &queries, 
+    Args... args)
+{
+    auto f = init_f(keys.begin(), keys.end() + half_keys, true, param, args...);
+
+   	std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<uint64_t> distr(1, (1ULL<<63)-1);
+
+    std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting inserts" << std::endl;
+    auto fp = 0, fn = 0, fa = 0;
+
+    start_timer(insert_time);
+    for (auto q : queries)
+    {
+        const auto [left, right, original_result] = q;
+        bool query_result = range_f(f, left, right);
+        if (query_result && !original_result) {
+            if (!adapt_f(f, left, right)) {
+              fa++;
+            }
+            fp_count[left]++;
+            fp++;
+        }
+        else if (!query_result && original_result)
+        {
+            std::cerr << "[!] alert, found false negative!" << std::endl;
+            fn++;
+        }
+    }
+    stop_timer(insert_time);
+
+    auto size = size_f(f);
+    test_out.add_measure("size", size);
+    test_out.add_measure("bpk", TO_BPK(size, keys.size()));
+    test_out.add_measure("fpr", ((double)fp / queries.size()));
+    test_out.add_measure("false_neg", fn);
+    test_out.add_measure("n_keys", keys.size());
+    test_out.add_measure("false_positives", fp);
+    test_out.add_measure("num_fp_keys", fp_count.size());
+    metadata_f(f);
+    std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
+}
+
+
+template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
 void experiment_fpr(
     InitFun init_f, 
     RangeFun range_f, 
