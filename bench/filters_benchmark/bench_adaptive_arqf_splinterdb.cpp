@@ -313,6 +313,15 @@ int main(int argc, char const *argv[])
           pass_ref(size_qf), 
           pass_ref(add_metadata), 
           arg, keys, queries, queries);
+    } else if (test_type == "inserts") {
+      experiment_inserts(
+          pass_fun(init_qf), 
+          pass_ref(query_qf), 
+          pass_ref(adapt_qf),
+          pass_ref(size_qf), 
+          pass_ref(insert_arqf), 
+          pass_ref(add_metadata), 
+          arg, keys, queries, queries);
     } else if (test_type == "adversarial") {
       std::string db_home = parser.get<std::string>("keys");
       db_home += "_wtdb";

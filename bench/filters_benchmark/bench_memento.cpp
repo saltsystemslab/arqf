@@ -189,6 +189,7 @@ inline QF* init_memento(const t_itr begin, const t_itr end, bool load_keys, cons
      */
   boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
 
+  std::cerr<<"Loading "<<key_hashes.size()<<std::endl;
   qf_bulk_load(qf, &key_hashes[0], key_hashes.size(), QF_NO_LOCK | QF_KEY_IS_HASH);
   qf->metadata->n_filter_queries = 0;
 
@@ -264,6 +265,18 @@ void run_test(
         range_f,
         adapt_f,
         size_f,
+        metadata_f,
+        arg,
+        keys,
+        queries,
+        queries);
+  } else if (test_type == "inserts") {
+    experiment_inserts(
+        init_f,
+        range_f,
+        adapt_f,
+        size_f,
+        insert_f,
         metadata_f,
         arg,
         keys,
