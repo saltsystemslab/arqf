@@ -23,7 +23,7 @@
  */
 
 template <typename t_itr>
-inline snarf_updatable_gcs<typename t_itr::value_type> init_snarf(const t_itr begin, const t_itr end, const double bpk)
+inline snarf_updatable_gcs<typename t_itr::value_type> init_snarf(const t_itr begin, const t_itr end, bool load_keys, const double bpk)
 {
     std::vector<typename t_itr::value_type> keys(begin, end);
     start_timer(build_time);
@@ -45,6 +45,17 @@ inline size_t size_snarf(snarf_updatable_gcs<value_type> &f)
     return f.return_size();
 }
 
+template <typename value_type>
+inline bool adapt_snarf(snarf_updatable_gcs<value_type> &f, const value_type left, const value_type right)
+{
+  return false;
+}
+
+template <typename value_type>
+inline void add_metadata(snarf_updatable_gcs<value_type> &f)
+{
+}
+
 int main(int argc, char const *argv[])
 {
     auto parser = init_parser("bench-snarf");
@@ -60,8 +71,19 @@ int main(int argc, char const *argv[])
     }
 
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
-    experiment(pass_fun(init_snarf),pass_ref(query_snarf),
-               pass_ref(size_snarf), arg, keys, queries);
+    auto test_type = parser.get<std::string>("--test-type");
+    if (test_type != "fpr") {
+        std::cout<<"Unsupported test type for SuRF"<<std::endl;
+        abort();
+    }
+    experiment_fpr(
+        pass_fun(init_snarf),
+        pass_ref(query_snarf),
+        pass_ref(adapt_snarf),
+        pass_ref(size_snarf), 
+        pass_ref(add_metadata),
+        arg, keys, queries
+    );
     print_test();
 
     return 0;

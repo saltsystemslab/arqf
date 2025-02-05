@@ -26,7 +26,7 @@
 std::string default_container = "sux";
 
 template <typename REContainer, typename t_itr>
-inline grafite::filter<REContainer> init_grafite(const t_itr begin, const t_itr end, const double bpk)
+inline grafite::filter<REContainer> init_grafite(const t_itr begin, const t_itr end, bool load_keys, const double bpk)
 {
     start_timer(build_time);
     grafite::filter<REContainer> filter(begin, end, bpk);
@@ -44,6 +44,17 @@ template <typename REContainer>
 inline size_t size_grafite(const grafite::filter<REContainer> &f)
 {
     return f.size();
+}
+
+template <typename REContainer>
+inline void add_metadata(const grafite::filter<REContainer> &f)
+{
+}
+
+template <typename REContainer, typename value_type>
+inline bool adapt_grafite(grafite::filter<REContainer> &f, const value_type left, const value_type right)
+{
+  return false;
 }
 
 int main(int argc, char const *argv[])
@@ -65,15 +76,29 @@ int main(int argc, char const *argv[])
     }
 
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
+    auto test_type = parser.get<std::string>("--test-type");
+    if (test_type != "fpr") {
+        std::cout<<"Unsupported test type for SuRF"<<std::endl;
+        abort();
+    }
     auto container = parser.get<std::string>("ds");
-
     std::cout << "[+] using container `" << container << "`" << std::endl;
     if (container == "sux")
-        experiment(pass_fun(init_grafite<grafite::ef_sux_vector>),pass_ref(query_grafite),
-                pass_ref(size_grafite), arg, keys, queries);
+        experiment_fpr(
+            pass_fun(init_grafite<grafite::ef_sux_vector>),
+            pass_ref(query_grafite),
+            pass_ref(adapt_grafite),
+            pass_ref(size_grafite), 
+            pass_ref(add_metadata),
+            arg, keys, queries);
     else if (container == "sdsl")
-        experiment(pass_fun(init_grafite<grafite::ef_sdsl_vector>),pass_ref(query_grafite),
-                   pass_ref(size_grafite), arg, keys, queries);
+        experiment_fpr(
+            pass_fun(init_grafite<grafite::ef_sdsl_vector>),
+            pass_ref(query_grafite),
+            pass_ref(adapt_grafite),
+            pass_ref(size_grafite), 
+            pass_ref(add_metadata), 
+            arg, keys, queries);
     else
         throw std::runtime_error("error, range emptiness data structure unknown.");
 

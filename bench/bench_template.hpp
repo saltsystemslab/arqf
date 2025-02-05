@@ -193,6 +193,15 @@ void experiment_fpr(
     }
     stop_timer(query_time);
 
+    start_timer(end_query_time);
+    for (auto q : queries)
+    {
+        const auto [left, right, original_result] = q;
+
+        bool query_result = range_f(f, left, right);
+    }
+    stop_timer(end_query_time);
+
     auto size = size_f(f);
     test_out.add_measure("size", size);
     test_out.add_measure("bpk", TO_BPK(size, keys.size()));

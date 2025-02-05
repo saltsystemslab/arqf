@@ -41,6 +41,24 @@ do
     --csv ${RESULT_DIR}/${dir}memento_${TEST_TYPE}.csv \
     --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
 
+  ${BIN_DIR}/bench/bench_surf $bpk \
+    --keys ${WORKLOAD_DIR}/keys \
+    --workload ${dir}left ${dir}right \
+    --csv ${RESULT_DIR}/${dir}surf_${TEST_TYPE}.csv \
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
+
+  ${BIN_DIR}/bench/bench_snarf $bpk \
+    --keys ${WORKLOAD_DIR}/keys \
+    --workload ${dir}left ${dir}right \
+    --csv ${RESULT_DIR}/${dir}snarf_${TEST_TYPE}.csv \
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
+
+  ${BIN_DIR}/bench/bench_grafite $bpk \
+    --keys ${WORKLOAD_DIR}/keys \
+    --workload ${dir}left ${dir}right \
+    --csv ${RESULT_DIR}/${dir}grafite_${TEST_TYPE}.csv \
+    --test-type ${TEST_TYPE} --key_len 8 --val_len 504 --buffer_pool_size ${CACHE_SIZE}
+
   ${BIN_DIR}/bench/bench_arqf $bpk \
     --keys ${WORKLOAD_DIR}/keys \
     --workload ${dir}left ${dir}right \

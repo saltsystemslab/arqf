@@ -23,7 +23,7 @@
  */
 
 template <typename t_itr, typename... Args>
-inline surf::SuRF init_surf(const t_itr begin, const t_itr end, const int suffix_bits, Args... args)
+inline surf::SuRF init_surf(const t_itr begin, const t_itr end, bool load_keys, const int suffix_bits, Args... args)
 {
     std::vector<std::string> string_keys(std::distance(begin, end));
     std::transform(begin, end, string_keys.begin(), [&](auto k)
@@ -57,6 +57,18 @@ inline size_t size_surf(surf::SuRF &f)
     return f.serializedSize();
 }
 
+template <typename value_type>
+inline bool adapt_surf(surf::SuRF &f, const value_type left, const value_type right)
+{
+  return false;
+}
+
+inline void add_metadata(surf::SuRF &f)
+{
+}
+
+
+
 int main(int argc, char const *argv[])
 {
     auto parser = init_parser("bench-surf");
@@ -73,7 +85,13 @@ int main(int argc, char const *argv[])
     }
 
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
+    auto test_type = parser.get<std::string>("--test-type");
     auto surf_hash = true;
+
+    if (test_type != "fpr") {
+        std::cout<<"Unsupported test type for SuRF"<<std::endl;
+        abort();
+    }
 
     // Check if all the queries are point queries, if so we use the hash version of SuRF, otherwise we use the real version.
     for (auto & it : queries)
@@ -82,13 +100,26 @@ int main(int argc, char const *argv[])
             surf_hash = false;
             break;
         }
+  
 
     if (surf_hash)
-        experiment(pass_fun(init_surf_hash),pass_ref(query_surf),
-                   pass_ref(size_surf), arg, keys, queries);
+        experiment_fpr(
+            pass_fun(init_surf_hash),
+            pass_ref(query_surf),
+            pass_ref(adapt_surf),
+            pass_ref(size_surf), 
+            pass_ref(add_metadata),
+            arg, keys, queries);
     else
-        experiment(pass_fun(init_surf),pass_ref(query_surf),
-               pass_ref(size_surf), arg, keys, queries);
+        experiment_fpr(
+            pass_fun(init_surf),
+            pass_ref(query_surf),
+            pass_ref(adapt_surf),
+            pass_ref(size_surf), 
+            pass_ref(add_metadata),
+            arg, 
+            keys, 
+            queries);
     print_test();
 
     return 0;
