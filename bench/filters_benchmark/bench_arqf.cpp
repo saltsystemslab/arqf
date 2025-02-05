@@ -194,6 +194,7 @@ inline QF* init_qf(const t_itr begin, const t_itr end, bool load_keys, const dou
     return right - left + 1;
   });
   const uint64_t n_items = std::distance(begin, end);
+  std::cout<<"Num items: "<<n_items<<std::endl;
   //const uint64_t seed = std::chrono::steady_clock::now().time_since_epoch().count();
   const uint64_t seed = 1380;
   const uint64_t max_range_size = *std::max_element(query_lengths.begin(), query_lengths.end());
@@ -237,6 +238,7 @@ inline QF* init_qf(const t_itr begin, const t_itr end, bool load_keys, const dou
      */
   uint64_t nkeys = key_hashes.size();
   boost::sort::spreadsort::spreadsort(key_hashes.begin(), key_hashes.end());
+  std::cerr<<"Loading "<<key_hashes.size()<<std::endl;
   int retcode = qf_bulk_load(qf, &key_hashes[0], key_hashes.size());
   if (retcode < 0) {
     std::cerr << "Failed to initialize iterator" << std::endl;
@@ -319,6 +321,16 @@ int main(int argc, char const* argv[])
         pass_ref(query_qf),
         pass_ref(adapt_qf),
         pass_ref(size_qf),
+        pass_ref(add_metadata),
+        arg, keys, queries, queries);
+  } else if (test_type == "inserts") {
+    auto [keys, queries, arg] = read_parser_arguments(parser);
+    experiment_inserts(
+        pass_fun(init_qf),
+        pass_ref(query_qf),
+        pass_ref(adapt_qf),
+        pass_ref(size_qf),
+        pass_ref(insert_qf),
         pass_ref(add_metadata),
         arg, keys, queries, queries);
   } else if (test_type == "adversarial") {

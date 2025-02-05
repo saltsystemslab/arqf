@@ -1,5 +1,10 @@
 #!/bin/bash
 
+./bench/scripts/gen_fpr_workload.sh large workloads
+./bench/scripts/run_inserts.sh large workloads results
+
+exit 0
+
 # FPR Tests
 #./bench/scripts/gen_fpr_workload.sh small workloads
 #./bench/scripts/run_fpr.sh small workloads results

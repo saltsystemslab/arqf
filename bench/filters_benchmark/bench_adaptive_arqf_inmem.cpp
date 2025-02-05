@@ -282,6 +282,18 @@ void run_test(
         keys,
         queries,
         queries);
+  } else if (test_type == "insert") {
+    experiment_inserts(
+        init_f,
+        range_f,
+        adapt_f,
+        size_f,
+        insert_f,
+        metadata_f,
+        arg,
+        keys,
+        queries,
+        queries);
   } else if (test_type == "adversarial") {
     std::string db_home = parser.get<std::string>("keys");
     db_home += "_wtdb";

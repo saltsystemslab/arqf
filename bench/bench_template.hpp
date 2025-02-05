@@ -21,6 +21,8 @@
 #include <iostream>
 #include <argparse/argparse.hpp>
 #include "bench_utils.hpp"
+#include <algorithm>
+#include <random>
 
 static uint64_t optimizer_hack = 0;
 const int default_key_len = 8, default_val_len = 504;
@@ -146,56 +148,34 @@ void experiment(InitFun init_f, RangeFun range_f, SizeFun size_f, const double p
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
-template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename MetadataFun, typename key_type, typename... Args>
-void experiment_insert(
+template <typename InitFun, typename RangeFun, typename AdaptFun, typename SizeFun, typename InsertFun, typename MetadataFun, typename key_type, typename... Args>
+void experiment_inserts(
     InitFun init_f, 
     RangeFun range_f, 
     AdaptFun adapt_f, 
     SizeFun size_f, 
+    InsertFun insert_f, 
     MetadataFun metadata_f, 
     const double param, 
     InputKeys<key_type> &keys, 
     Workload<key_type> &queries, 
     Args... args)
 {
-    auto f = init_f(keys.begin(), keys.end() + half_keys, true, param, args...);
-
-   	std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint64_t> distr(1, (1ULL<<63)-1);
-
+    auto f1 = init_f(keys.begin(), keys.begin() + queries.size(), true, param, args...);
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting inserts" << std::endl;
-    auto fp = 0, fn = 0, fa = 0;
 
+    auto f2 = init_f(keys.begin(), keys.begin() + queries.size(), false, param, args...);
     start_timer(insert_time);
-    for (auto q : queries)
-    {
-        const auto [left, right, original_result] = q;
-        bool query_result = range_f(f, left, right);
-        if (query_result && !original_result) {
-            if (!adapt_f(f, left, right)) {
-              fa++;
-            }
-            fp_count[left]++;
-            fp++;
-        }
-        else if (!query_result && original_result)
-        {
-            std::cerr << "[!] alert, found false negative!" << std::endl;
-            fn++;
-        }
+    for (uint64_t i=0; i < queries.size(); i++) {
+      insert_f(f2, keys[i]);
     }
     stop_timer(insert_time);
 
-    auto size = size_f(f);
+    auto size = size_f(f2);
     test_out.add_measure("size", size);
-    test_out.add_measure("bpk", TO_BPK(size, keys.size()));
-    test_out.add_measure("fpr", ((double)fp / queries.size()));
-    test_out.add_measure("false_neg", fn);
-    test_out.add_measure("n_keys", keys.size());
-    test_out.add_measure("false_positives", fp);
-    test_out.add_measure("num_fp_keys", fp_count.size());
-    metadata_f(f);
+    test_out.add_measure("bpk", TO_BPK(size, queries.size()));
+    test_out.add_measure("n_keys", queries.size());
+    metadata_f(f2);
     std::cout << "[+] test executed successfully, printing stats and closing." << std::endl;
 }
 
@@ -562,6 +542,9 @@ void experiment_mixed_workload(
     error_check(session->create(session, "table:bm", table_schema));
     error_check(session->open_cursor(session, "table:bm", NULL, NULL, &cursor));
 
+    auto rng = std::default_random_engine {};
+    std::shuffle(std::begin(keys), std::end(keys), rng);
+
     // print_database_stats(session);
     start_timer(load_phase_time);
     auto f = init_f(keys.begin(), keys.end(), false, param, args...);
@@ -625,6 +608,7 @@ void experiment_mixed_workload(
       }
     }
     stop_timer(mixed_workload_time);
+    // print_database_stats(session);
 
     auto size = size_f(f);
     test_out.add_measure("size", size);
