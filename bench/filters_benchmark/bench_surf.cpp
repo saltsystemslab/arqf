@@ -67,6 +67,11 @@ inline void add_metadata(surf::SuRF &f)
 {
 }
 
+template <typename value_type>
+inline void insert_surf(surf::SuRF &f, const value_type v) {
+    // SuRF does not support inserts.
+}
+
 
 
 int main(int argc, char const *argv[])
@@ -88,11 +93,6 @@ int main(int argc, char const *argv[])
     auto test_type = parser.get<std::string>("--test-type");
     auto surf_hash = true;
 
-    if (test_type != "fpr") {
-        std::cout<<"Unsupported test type for SuRF"<<std::endl;
-        abort();
-    }
-
     // Check if all the queries are point queries, if so we use the hash version of SuRF, otherwise we use the real version.
     for (auto & it : queries)
         if (std::get<0>(it) != std::get<1>(it))
@@ -102,6 +102,7 @@ int main(int argc, char const *argv[])
         }
   
 
+    if (test_type == "fpr") {
     if (surf_hash)
         experiment_fpr(
             pass_fun(init_surf_hash),
@@ -120,6 +121,22 @@ int main(int argc, char const *argv[])
             arg, 
             keys, 
             queries);
+    } else if (test_type == "inserts") {
+        experiment_inserts(
+            pass_fun(init_surf),
+            pass_ref(query_surf),
+            pass_ref(adapt_surf),
+            pass_ref(size_surf), 
+            pass_ref(insert_surf),
+            pass_ref(add_metadata),
+            arg, 
+            keys, 
+            queries
+        );
+    } else {
+        printf("Unsupported test, aborting\n");
+        abort(); // Unsupported test.
+    }
     print_test();
 
     return 0;

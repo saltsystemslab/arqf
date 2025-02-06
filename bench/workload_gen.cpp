@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <vector>
+#include <unordered_set>
 #include "zipf.h"
 
 #include "bench_utils.hpp"
@@ -162,6 +163,7 @@ bool create_dir_recursive(const std::string &dir_name) {
 
 InputKeys<uint64_t> generate_keys_zipfian(uint64_t n_keys, double pow, uint64_t batch_size, uint64_t universe_size = UINT32_MAX - 1, uint64_t s = 0) {
   std::vector<uint64_t> keys_set;
+  std::unordered_set<uint64_t> unique_keys;
   if (batch_size == 0) batch_size = n_keys;
   if (s == 0) s = time(NULL);
   uint64_t *zipfian = new uint64_t[batch_size];
@@ -169,8 +171,10 @@ InputKeys<uint64_t> generate_keys_zipfian(uint64_t n_keys, double pow, uint64_t 
     generate_random_keys(zipfian + i, universe_size, batch_size, 1.5);
     for (uint64_t j=0; j < batch_size; j++) {
       keys_set.push_back(MurmurHash64A(&zipfian[j], sizeof(zipfian[j]), s));
+      unique_keys.insert(MurmurHash64A(&zipfian[j], sizeof(zipfian[j]), s));
     }
   }
+  std::cout<<"Number of unique keys: "<<unique_keys.size()<<std::endl;
   return keys_set;
 }
 

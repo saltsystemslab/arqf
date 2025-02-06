@@ -56,6 +56,12 @@ inline void add_metadata(snarf_updatable_gcs<value_type> &f)
 {
 }
 
+template <typename value_type>
+inline void insert_snarf(snarf_updatable_gcs<value_type> &f, const value_type v)
+{
+    f.insert_key(v);
+}
+
 int main(int argc, char const *argv[])
 {
     auto parser = init_parser("bench-snarf");
@@ -72,18 +78,29 @@ int main(int argc, char const *argv[])
 
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
     auto test_type = parser.get<std::string>("--test-type");
-    if (test_type != "fpr") {
-        std::cout<<"Unsupported test type for SuRF"<<std::endl;
+    if (test_type == "fpr") {
+        experiment_fpr(
+            pass_fun(init_snarf),
+            pass_ref(query_snarf),
+            pass_ref(adapt_snarf),
+            pass_ref(size_snarf), 
+            pass_ref(add_metadata),
+            arg, keys, queries
+        );
+    } else if (test_type == "inserts") {
+        experiment_inserts(
+            pass_fun(init_snarf),
+            pass_ref(query_snarf),
+            pass_ref(adapt_snarf),
+            pass_ref(size_snarf), 
+            pass_ref(insert_snarf),
+            pass_ref(add_metadata),
+            arg, keys, queries
+        );
+    } else {
+        printf("Unsupported test type, aborting\n");
         abort();
     }
-    experiment_fpr(
-        pass_fun(init_snarf),
-        pass_ref(query_snarf),
-        pass_ref(adapt_snarf),
-        pass_ref(size_snarf), 
-        pass_ref(add_metadata),
-        arg, keys, queries
-    );
     print_test();
 
     return 0;

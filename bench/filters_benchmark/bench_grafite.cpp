@@ -52,6 +52,11 @@ inline void add_metadata(const grafite::filter<REContainer> &f)
 }
 
 template <typename REContainer, typename value_type>
+inline void insert_grafite(const grafite::filter<REContainer> &f, const value_type v)
+{
+}
+
+template <typename REContainer, typename value_type>
 inline bool adapt_grafite(grafite::filter<REContainer> &f, const value_type left, const value_type right)
 {
   return false;
@@ -77,30 +82,53 @@ int main(int argc, char const *argv[])
 
     auto [ keys, queries, arg ] = read_parser_arguments(parser);
     auto test_type = parser.get<std::string>("--test-type");
-    if (test_type != "fpr") {
-        std::cout<<"Unsupported test type for SuRF"<<std::endl;
-        abort();
-    }
+
     auto container = parser.get<std::string>("ds");
     std::cout << "[+] using container `" << container << "`" << std::endl;
-    if (container == "sux")
-        experiment_fpr(
-            pass_fun(init_grafite<grafite::ef_sux_vector>),
-            pass_ref(query_grafite),
-            pass_ref(adapt_grafite),
-            pass_ref(size_grafite), 
-            pass_ref(add_metadata),
-            arg, keys, queries);
-    else if (container == "sdsl")
-        experiment_fpr(
-            pass_fun(init_grafite<grafite::ef_sdsl_vector>),
-            pass_ref(query_grafite),
-            pass_ref(adapt_grafite),
-            pass_ref(size_grafite), 
-            pass_ref(add_metadata), 
-            arg, keys, queries);
-    else
-        throw std::runtime_error("error, range emptiness data structure unknown.");
+    if (test_type == "fpr") {
+        if (container == "sux")
+            experiment_fpr(
+                pass_fun(init_grafite<grafite::ef_sux_vector>),
+                pass_ref(query_grafite),
+                pass_ref(adapt_grafite),
+                pass_ref(size_grafite), 
+                pass_ref(add_metadata),
+                arg, keys, queries);
+        else if (container == "sdsl")
+            experiment_fpr(
+                pass_fun(init_grafite<grafite::ef_sdsl_vector>),
+                pass_ref(query_grafite),
+                pass_ref(adapt_grafite),
+                pass_ref(size_grafite), 
+                pass_ref(add_metadata), 
+                arg, keys, queries);
+        else
+            throw std::runtime_error("error, range emptiness data structure unknown.");
+    } else if (test_type == "inserts") {
+        if (container == "sux")
+            experiment_inserts(
+                pass_fun(init_grafite<grafite::ef_sux_vector>),
+                pass_ref(query_grafite),
+                pass_ref(adapt_grafite),
+                pass_ref(size_grafite), 
+                pass_ref(insert_grafite),
+                pass_ref(add_metadata),
+                arg, keys, queries);
+        else if (container == "sdsl")
+            experiment_inserts(
+                pass_fun(init_grafite<grafite::ef_sdsl_vector>),
+                pass_ref(query_grafite),
+                pass_ref(adapt_grafite),
+                pass_ref(size_grafite), 
+                pass_ref(insert_grafite),
+                pass_ref(add_metadata), 
+                arg, keys, queries);
+        else
+            throw std::runtime_error("error, range emptiness data structure unknown.");
+
+    } else {
+        printf("Unsupported test type, aborting\n");
+    }
 
     print_test();
 
