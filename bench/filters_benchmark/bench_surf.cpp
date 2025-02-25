@@ -133,7 +133,37 @@ int main(int argc, char const *argv[])
             keys, 
             queries
         );
-    } else {
+    } else if (test_type == "adversarial") {
+        std::string db_home = parser.get<std::string>("keys");
+        db_home += "_wtdb";
+        if (surf_hash) {
+            experiment_adversarial_workload(
+                pass_fun(init_surf_hash),
+                pass_ref(query_surf),
+                pass_ref(adapt_surf),
+                pass_ref(size_surf), 
+                pass_ref(add_metadata), 
+                arg, 
+                db_home,
+                keys, 
+                queries,
+                queries);
+        } else {
+            experiment_adversarial_workload(
+                pass_fun(init_surf),
+                pass_ref(query_surf),
+                pass_ref(adapt_surf),
+                pass_ref(size_surf), 
+                pass_ref(add_metadata), 
+                arg, 
+                db_home,
+                keys, 
+                queries,
+                queries);
+
+        }
+    } 
+    else {
         printf("Unsupported test, aborting\n");
         abort(); // Unsupported test.
     }

@@ -97,7 +97,19 @@ int main(int argc, char const *argv[])
             pass_ref(add_metadata),
             arg, keys, queries
         );
-    } else {
+    } else if (test_type == "adversarial") {
+        std::string db_home = parser.get<std::string>("keys");
+        db_home += "_wtdb";
+        experiment_adversarial_workload(
+            pass_fun(init_snarf),
+            pass_ref(query_snarf),
+            pass_ref(adapt_snarf),
+            pass_ref(size_snarf), 
+            pass_ref(add_metadata),
+            arg, db_home, keys, queries
+        );
+    } 
+    else {
         printf("Unsupported test type, aborting\n");
         abort();
     }

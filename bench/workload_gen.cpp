@@ -325,34 +325,25 @@ Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<ui
         }
 
         auto q_result = (range_size > 1) ? vector_range_query(keys, left, right) : vector_point_query(keys, left);
-        uint64_t old_size = unique_queries.size();
-        unique_queries.emplace(left, right, q_result);
-        if (unique_queries.size() == old_size) {
-          continue;
-        }
         q.push_back(std::make_tuple(left, right, q_result));
         printProgress(((double) q.size()) / n_queries);
     }
 
-    Workload<uint64_t> q_out;
-    q_out.reserve(q.size());
-    for (auto i : q)
-        q_out.push_back(i);
-    std::mt19937 shuffle_gen(seed);
-    std::shuffle(q_out.begin(), q_out.end(), shuffle_gen);
 
     if (qdist == "qcorrelated-zipf") {
+        std::mt19937 shuffle_gen(seed);
+        std::shuffle(q.begin(), q.end(), shuffle_gen);
       // Extract a zipfian distribution from each of these queries.
       Workload<uint64_t> zipf_queries_list;
-      uint64_t *zipf_set = new uint64_t[q_out.size()];
-      generate_random_keys(zipf_set, q_out.size(), q_out.size(), 1.5);
-      for (auto i=0; i<q_out.size(); i++) {
-          zipf_queries_list.push_back(q_out[zipf_set[i]]);
+      uint64_t *zipf_set = new uint64_t[q.size()];
+      generate_random_keys(zipf_set, q.size(), q.size(), 1.5);
+      for (auto i=0; i<q.size(); i++) {
+          zipf_queries_list.push_back(q[zipf_set[i]]);
       }
       delete zipf_set;
       return zipf_queries_list;
     }
-    return q_out;
+    return q;
 }
 
 Workload<uint64_t> generate_synth_queries(const std::string& qdist, InputKeys<uint64_t> &keys,

@@ -360,6 +360,7 @@ void experiment_adversarial_workload(
     
     std::cerr << "[+] WiredTiger loaded DB loaded. with config: " << std::string(connection_config) << std::endl;
 
+    sort(keys.begin(), keys.end());
     auto f = init_f(keys.begin(), keys.end(), true, param, args...);
 
     std::cout << "[+] data structure constructed in " << test_out["build_time"] << "ms, starting queries" << std::endl;
@@ -431,7 +432,7 @@ void experiment_adversarial_workload(
       uint64_t right = r;
       bool original_result = orig;
 
-      if (i % adversary_freq == 0) {
+      if (i % adversary_freq == 0 && adversaries.size() > 0) {
         num_adversarial_queries++;
         left = adversaries[adversary_idx].first;
         right = adversaries[adversary_idx].second;
@@ -453,7 +454,7 @@ void experiment_adversarial_workload(
         fetch_from_db_duration_ns += t_duration_db_fetch;
 
         fp += !original_result;
-        if (i % adversary_freq == 0) {
+        if (i % adversary_freq == 0 && adversaries.size() > 0) {
           fp_adversarial++;
         } else {
           fp_query_set++;

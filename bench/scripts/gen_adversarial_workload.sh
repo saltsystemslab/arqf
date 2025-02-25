@@ -25,8 +25,9 @@ N_QUERY=200000000 # 200 Million
 WORKLOAD_PATH=$2/adversarial_large
 fi
 
+mkdir -p $2
 mkdir -p ${WORKLOAD_PATH}
  
 cd ${WORKLOAD_PATH}
 
-$WORKLOAD_GEN_PATH -n ${N_ELEMS} -q ${N_QUERY} --kdist kuniform --qdist quniform -u $Q_UNIVERSE_SIZE -t 1
+$WORKLOAD_GEN_PATH -n ${N_ELEMS} -q ${N_QUERY} --kdist kuniform --qdist qzipfian -u $Q_UNIVERSE_SIZE -t 1 

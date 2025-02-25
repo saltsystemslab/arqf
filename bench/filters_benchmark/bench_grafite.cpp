@@ -125,8 +125,27 @@ int main(int argc, char const *argv[])
                 arg, keys, queries);
         else
             throw std::runtime_error("error, range emptiness data structure unknown.");
-
-    } else {
+    } else if (test_type == "adversarial") {
+        std::string db_home = parser.get<std::string>("keys");
+        db_home += "_wtdb";
+        if (container == "sux")
+            experiment_adversarial_workload(
+                pass_fun(init_grafite<grafite::ef_sux_vector>),
+                pass_ref(query_grafite),
+                pass_ref(adapt_grafite),
+                pass_ref(size_grafite), 
+                pass_ref(add_metadata),
+                arg, db_home, keys, queries);
+        else if (container == "sdsl")
+            experiment_adversarial_workload(
+                pass_fun(init_grafite<grafite::ef_sdsl_vector>),
+                pass_ref(query_grafite),
+                pass_ref(adapt_grafite),
+                pass_ref(size_grafite), 
+                pass_ref(add_metadata), 
+                arg, db_home, keys, queries);
+    }
+    else {
         printf("Unsupported test type, aborting\n");
     }
 
