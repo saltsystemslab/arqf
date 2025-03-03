@@ -10,15 +10,15 @@ WORKLOAD_PATH=$2/mixed_small
 fi
 
 if [[ $1 == "medium" ]]; then
-N_ELEMS=20000000 # 2 Million
-N_QUERY=20000000 # 2 Million
+N_ELEMS=20000000 # 20 Million
+N_QUERY=20000000 # 20 Million
 WORKLOAD_PATH=$2/mixed_medium
 fi
 
 
 if [[ $1 == "large" ]]; then
-N_ELEMS=200000000 # 2 Million
-N_QUERY=200000000 # 2 Million
+N_ELEMS=200000000 # 200 Million
+N_QUERY=200000000 # 200 Million
 WORKLOAD_PATH=$2/mixed_large
 fi
 

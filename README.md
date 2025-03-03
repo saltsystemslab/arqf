@@ -1,51 +1,42 @@
-## Building external dependecies
+# Aeris Filter
 
-```bash
-# Fetch Submodules
-$ git submodule update --init --recursive
+The Aeris filter, an Adaptive Expandable Range filter, is a range filter that dynamically resolves false positives. It is the first range filter to guarantee a bounded false positive rate for any query distribution, including skewed and adversarial where existing range filters exhibit unbounded false positive rates. Aeris supports efficient expansions and ensures monotonic adaptivity, meaning it never forgets a false positive. Built on the Memento filter—a fingerprint-based dynamic range filter—Aeris inherits its support for dynamic updates, constant-time operations, and robust false positive rate guarantees
 
-# Build SplinterDB  (From https://github.com/vmware/splinterdb/blob/main/docs/build.md#full-build)
-$ pushd
-$ cd adaptiveqf/external/splinterdb
-$ export COMPILER=gcc
-$ export CC=$COMPILER
-$ export LD=$COMPILER
-$ make
-$ popd
+# API
 
-# Build WiredTiger
-$ pushd
-$ cd external/wiredtiger
-$ mkdir build
-$ cd build
-$ cmake ../
-$ make -j
-$ popd
+Refer to `./bench/filters_benchmark/bench_adaptive_arqf_splinterdb.cpp` for reference.
 
-# Build 
-$ mkdir release # Workload scripts hardcode the build directory to release
-$ cd release
-$ cmake -DCMAKE_BUILD_TYPE=Release ../
-$ make bench_memento bench_arqf bench_adaptive_arqf_inmem bench_adaptive_arqf_splinterdb workload_gen
+```cpp
+
+//Initialization
+    data_config* data_cfg;
+    splinterdb_config* splinterdb_cfg;
+    splinterdb* db;
+    qf_init_splinterdb(&db, &data_cfg, &splinterdb_cfg, "rhm");
+    ARQF* arqf = (ARQF*)malloc(sizeof(ARQF));
+    arqf_init_with_rhm(arqf, db, n_slots, key_size, memento_bits, seed);
+
+// Insert key
+qf_insert_memento(arqf->qf, value, 0, &fingerprint);
+
+// Query
+result = qf_point_query(qf->qf, left, QF_NO_LOCK);
+result = qf_range_query(qf->qf, left, right, QF_NO_LOCK);
+
+// Adapt false positive query
+arqf_adapt(qf, left, 0);
+arqf_adapt_range(qf, left, right, 0);
+
 ```
 
-## Running tests
 
-The below tests will run all the tests. The first is the standard FPR vs Bpk test with a zipfian query distribution. 
 
-The second is an adversarial test that injects collected false positives at some frequency.
-
-Both the below scripts run a small, medium and large test versions of the same test.
+## Test reproducibility
 
 ```bash
-.$ /run_zipfian.sh
-$ ./run_adversarial.sh
+$ ./setup_tests.sh
+$ ./run_tests small # Sanity check.
+$ ./run_tests large
 ```
 
 Use `bench/scripts/graph.ipynb` to plot the results.
-
-## Code
-
-The ARQF changes are implemented in `gqf.c`, `arqf.c` (splinterdb as reverse hash map)  and `arqf_inmem.cc` (`std::unordered_map` as reverse hash map).
-
-TODO: Document out the exact changes, but you should be able to backtrack from `bench/filters_benchmark/bench_arqf.cpp`, `bench_adaptive_arqf_inmem.cpp` or `bench_adaptive_arqf_splinterdb.cpp`.
