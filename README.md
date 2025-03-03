@@ -9,12 +9,12 @@ Refer to `./bench/filters_benchmark/bench_adaptive_arqf_splinterdb.cpp` for refe
 ```cpp
 
 //Initialization
-    data_config* data_cfg;
-    splinterdb_config* splinterdb_cfg;
-    splinterdb* db;
-    qf_init_splinterdb(&db, &data_cfg, &splinterdb_cfg, "rhm");
-    ARQF* arqf = (ARQF*)malloc(sizeof(ARQF));
-    arqf_init_with_rhm(arqf, db, n_slots, key_size, memento_bits, seed);
+data_config* data_cfg;
+splinterdb_config* splinterdb_cfg;
+splinterdb* db;
+qf_init_splinterdb(&db, &data_cfg, &splinterdb_cfg, "rhm");
+ARQF* arqf = (ARQF*)malloc(sizeof(ARQF));
+arqf_init_with_rhm(arqf, db, n_slots, key_size, memento_bits, seed);
 
 // Insert key
 qf_insert_memento(arqf->qf, value, 0, &fingerprint);
